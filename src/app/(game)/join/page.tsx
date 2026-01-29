@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { toast } from "sonner";
 
 export default function JoinPage() {
     const router = useRouter();
-    const [gamePin, setGamePin] = useState("");
+    const searchParams = useSearchParams();
+    const [gamePin, setGamePin] = useState(searchParams?.get("pin") || "");
 
     const handleJoin = () => {
         if (gamePin.length !== 6) {

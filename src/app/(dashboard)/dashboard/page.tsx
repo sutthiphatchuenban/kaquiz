@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth-store";
@@ -33,6 +33,14 @@ export default function DashboardPage() {
     const router = useRouter();
     const { user, isLoading, isAuthenticated, checkAuth, logout } = useAuthStore();
 
+    const [stats, setStats] = useState({
+        quizCount: 0,
+        gameCount: 0,
+        totalPlayers: 0,
+        averageScore: 0
+    });
+    const [recentQuizzes, setRecentQuizzes] = useState<any[]>([]);
+
     useEffect(() => {
         checkAuth();
     }, [checkAuth]);
@@ -42,6 +50,29 @@ export default function DashboardPage() {
             router.push("/login");
         }
     }, [isLoading, isAuthenticated, router]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            const fetchDashboardData = async () => {
+                try {
+                    const res = await fetch("/api/dashboard");
+                    const data = await res.json();
+                    if (data.success) {
+                        setStats({
+                            quizCount: data.data.quizCount,
+                            gameCount: data.data.gameCount,
+                            totalPlayers: data.data.totalPlayers,
+                            averageScore: data.data.averageScore
+                        });
+                        setRecentQuizzes(data.data.recentQuizzes);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch dashboard data");
+                }
+            };
+            fetchDashboardData();
+        }
+    }, [isAuthenticated]);
 
     const handleLogout = async () => {
         await logout();
@@ -222,7 +253,7 @@ export default function DashboardPage() {
                                     <FileQuestion className="w-6 h-6 text-primary" />
                                 </div>
                                 <div>
-                                    <p className="text-2xl font-bold">0</p>
+                                    <p className="text-2xl font-bold">{stats.quizCount}</p>
                                     <p className="text-sm text-muted-foreground">Quiz ทั้งหมด</p>
                                 </div>
                             </div>
@@ -235,7 +266,7 @@ export default function DashboardPage() {
                                     <PlayCircle className="w-6 h-6" style={{ color: "var(--answer-green)" }} />
                                 </div>
                                 <div>
-                                    <p className="text-2xl font-bold">0</p>
+                                    <p className="text-2xl font-bold">{stats.gameCount}</p>
                                     <p className="text-sm text-muted-foreground">เกมที่เล่น</p>
                                 </div>
                             </div>
@@ -248,7 +279,7 @@ export default function DashboardPage() {
                                     <Users className="w-6 h-6" style={{ color: "var(--answer-blue)" }} />
                                 </div>
                                 <div>
-                                    <p className="text-2xl font-bold">0</p>
+                                    <p className="text-2xl font-bold">{stats.totalPlayers}</p>
                                     <p className="text-sm text-muted-foreground">ผู้เล่นทั้งหมด</p>
                                 </div>
                             </div>
@@ -261,7 +292,7 @@ export default function DashboardPage() {
                                     <Trophy className="w-6 h-6" style={{ color: "var(--answer-yellow)" }} />
                                 </div>
                                 <div>
-                                    <p className="text-2xl font-bold">0</p>
+                                    <p className="text-2xl font-bold">{stats.averageScore}</p>
                                     <p className="text-sm text-muted-foreground">คะแนนเฉลี่ย</p>
                                 </div>
                             </div>
@@ -286,19 +317,52 @@ export default function DashboardPage() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                                <FileQuestion className="w-8 h-8 text-muted-foreground" />
+                        {recentQuizzes.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+                                    <FileQuestion className="w-8 h-8 text-muted-foreground" />
+                                </div>
+                                <h3 className="text-lg font-medium mb-2">ยังไม่มี Quiz</h3>
+                                <p className="text-muted-foreground mb-4">เริ่มต้นสร้าง Quiz แรกของคุณเลย!</p>
+                                <Link href="/quizzes/new">
+                                    <Button>
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        สร้าง Quiz
+                                    </Button>
+                                </Link>
                             </div>
-                            <h3 className="text-lg font-medium mb-2">ยังไม่มี Quiz</h3>
-                            <p className="text-muted-foreground mb-4">เริ่มต้นสร้าง Quiz แรกของคุณเลย!</p>
-                            <Link href="/quizzes/new">
-                                <Button>
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    สร้าง Quiz
-                                </Button>
-                            </Link>
-                        </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {recentQuizzes.map((quiz) => (
+                                    <div key={quiz.id} className="flex items-center justify-between p-4 rounded-lg bg-card border hover:shadow-md transition-all">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                                                <FileQuestion className="w-5 h-5 text-primary" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold">{quiz.title}</h4>
+                                                <p className="text-sm text-muted-foreground line-clamp-1">
+                                                    {quiz.description || "ไม่มีคำอธิบาย"} • {quiz._count?.questions || 0} คำถาม
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Link href={`/quizzes/${quiz.id}/host`}>
+                                                <Button size="sm" variant="ghost">
+                                                    <PlayCircle className="w-4 h-4 mr-2" />
+                                                    เล่น
+                                                </Button>
+                                            </Link>
+                                            <Link href={`/quizzes/${quiz.id}/edit`}>
+                                                <Button size="sm" variant="ghost">
+                                                    แก้ไข
+                                                </Button>
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </main>
