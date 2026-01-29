@@ -1,0 +1,183 @@
+// ========================================
+// KaQuiz - Prisma Schema
+// ========================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ========================================
+// User Model
+// ========================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  name         String
+  avatar       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  quizzes      Quiz[]
+  gameSessions GameSession[]
+
+  @@map("users")
+}
+
+// ========================================
+// Quiz Model
+// ========================================
+
+model Quiz {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  coverImage  String?
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions    Question[]
+  gameSessions GameSession[]
+
+  @@index([userId])
+  @@map("quizzes")
+}
+
+// ========================================
+// Question Model
+// ========================================
+
+model Question {
+  id           String       @id @default(cuid())
+  questionText String
+  type         QuestionType @default(MULTIPLE_CHOICE)
+  timeLimit    Int          @default(20) // seconds
+  points       Int          @default(1000)
+  imageUrl     String?
+  order        Int
+
+  // Relations
+  quizId        String
+  quiz          Quiz           @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers       Answer[]
+  playerAnswers PlayerAnswer[]
+
+  @@index([quizId])
+  @@map("questions")
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  TYPE_ANSWER
+}
+
+// ========================================
+// Answer Model
+// ========================================
+
+model Answer {
+  id         String  @id @default(cuid())
+  answerText String
+  isCorrect  Boolean @default(false)
+  color      String  @default("red") // red, blue, green, yellow
+  order      Int
+
+  // Relations
+  questionId    String
+  question      Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  playerAnswers PlayerAnswer[]
+
+  @@index([questionId])
+  @@map("answers")
+}
+
+// ========================================
+// Game Session Model
+// ========================================
+
+model GameSession {
+  id                   String     @id @default(cuid())
+  pin                  String     @unique
+  status               GameStatus @default(LOBBY)
+  currentQuestionIndex Int        @default(0)
+  startedAt            DateTime?
+  endedAt              DateTime?
+  createdAt            DateTime   @default(now())
+
+  // Relations
+  quizId  String
+  quiz    Quiz     @relation(fields: [quizId], references: [id])
+  hostId  String
+  host    User     @relation(fields: [hostId], references: [id])
+  players Player[]
+
+  @@index([pin])
+  @@index([quizId])
+  @@index([hostId])
+  @@map("game_sessions")
+}
+
+enum GameStatus {
+  LOBBY
+  PLAYING
+  QUESTION
+  SHOWING_ANSWER
+  LEADERBOARD
+  FINISHED
+}
+
+// ========================================
+// Player Model (Game Participants)
+// ========================================
+
+model Player {
+  id       String   @id @default(cuid())
+  nickname String
+  score    Int      @default(0)
+  rank     Int      @default(0)
+  joinedAt DateTime @default(now())
+
+  // Relations
+  sessionId String
+  session   GameSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answers   PlayerAnswer[]
+
+  @@index([sessionId])
+  @@map("players")
+}
+
+// ========================================
+// Player Answer Model
+// ========================================
+
+model PlayerAnswer {
+  id           String   @id @default(cuid())
+  isCorrect    Boolean
+  responseTime Int      // milliseconds
+  pointsEarned Int      @default(0)
+  answeredAt   DateTime @default(now())
+
+  // Relations
+  playerId   String
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  answerId   String?
+  answer     Answer?  @relation(fields: [answerId], references: [id])
+
+  @@index([playerId])
+  @@index([questionId])
+  @@map("player_answers")
+}
