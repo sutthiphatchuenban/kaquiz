@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Play, ChevronRight } from "lucide-react";
+import { Sparkles, Play, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-export default function JoinPage() {
+function JoinForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [gamePin, setGamePin] = useState(searchParams?.get("pin") || "");
@@ -71,5 +71,17 @@ export default function JoinPage() {
                 </Link>
             </p>
         </div>
+    );
+}
+
+export default function JoinPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen game-bg flex items-center justify-center">
+                <Loader2 className="w-12 h-12 text-white animate-spin opacity-50" />
+            </div>
+        }>
+            <JoinForm />
+        </Suspense>
     );
 }

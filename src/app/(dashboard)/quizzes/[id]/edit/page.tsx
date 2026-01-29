@@ -33,6 +33,7 @@ import {
     Sparkles,
     ArrowLeft,
     Plus,
+    Edit,
     Trash2,
     Save,
     Play,
@@ -93,7 +94,6 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
     const [isSaving, setIsSaving] = useState(false);
     const [showAddQuestion, setShowAddQuestion] = useState(false);
 
-    // New question form state
     const [newQuestion, setNewQuestion] = useState({
         questionText: "",
         type: "MULTIPLE_CHOICE" as "MULTIPLE_CHOICE" | "TRUE_FALSE" | "TYPE_ANSWER",
@@ -107,6 +107,8 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
             { answerText: "", isCorrect: false, color: "yellow" as const, order: 3 },
         ],
     });
+
+    const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
 
     useEffect(() => {
         checkAuth();
@@ -168,7 +170,7 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
         }
     };
 
-    const handleAddQuestion = async () => {
+    const handleQuestionSubmit = async () => {
         if (!newQuestion.questionText.trim()) {
             toast.error("กรุณากรอกคำถาม");
             return;
@@ -187,27 +189,91 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
         }
 
         try {
-            const res = await fetch(`/api/quizzes/${id}/questions`, {
-                method: "POST",
+            const endpoint = `/api/quizzes/${id}/questions`;
+            const method = editingQuestionId ? "PUT" : "POST";
+            const body = {
+                ...newQuestion,
+                order: editingQuestionId ? undefined : (quiz?.questions.length || 0),
+                answers: filledAnswers,
+                questionId: editingQuestionId // Include ID for updates
+            };
+
+            const res = await fetch(endpoint, {
+                method,
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    ...newQuestion,
-                    order: quiz?.questions.length || 0,
-                    answers: filledAnswers,
-                }),
+                body: JSON.stringify(body),
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                if (editingQuestionId) {
+                    // Update existing question in state
+                    setQuiz(prev => prev ? {
+                        ...prev,
+                        questions: prev.questions.map(q => q.id === editingQuestionId ? data.data : q)
+                    } : null);
+                    toast.success("แก้ไขคำถามสำเร็จ");
+                } else {
+                    // Add new question
+                    setQuiz(prev => prev ? {
+                        ...prev,
+                        questions: [...prev.questions, data.data],
+                    } : null);
+                    toast.success("เพิ่มคำถามสำเร็จ");
+                }
+                setShowAddQuestion(false);
+                resetNewQuestion();
+            } else {
+                toast.error(data.error || (editingQuestionId ? "แก้ไขคำถามไม่สำเร็จ" : "เพิ่มคำถามไม่สำเร็จ"));
+            }
+        } catch {
+            toast.error("เกิดข้อผิดพลาด");
+        }
+    };
+
+    const handleEditQuestion = (question: Question) => {
+        setEditingQuestionId(question.id);
+        setNewQuestion({
+            questionText: question.questionText,
+            type: question.type,
+            timeLimit: question.timeLimit,
+            points: question.points,
+            imageUrl: question.imageUrl || "",
+            answers: [
+                ...question.answers.map(a => ({
+                    ...a,
+                    color: a.color as "red" | "blue" | "green" | "yellow"
+                })),
+                // Fill remaining slots if less than 4 answers
+                ...Array(4 - question.answers.length).fill(null).map((_, i) => ({
+                    answerText: "",
+                    isCorrect: false,
+                    color: ANSWER_COLORS[question.answers.length + i],
+                    order: question.answers.length + i
+                }))
+            ].slice(0, 4) // Ensure max 4
+        });
+        setShowAddQuestion(true);
+    };
+
+    const handleDeleteQuestion = async (questionId: string) => {
+        if (!confirm("คุณต้องการลบคำถามนี้ใช่หรือไม่?")) return;
+
+        try {
+            const res = await fetch(`/api/quizzes/${id}/questions?questionId=${questionId}`, {
+                method: "DELETE",
             });
             const data = await res.json();
 
             if (data.success) {
                 setQuiz(prev => prev ? {
                     ...prev,
-                    questions: [...prev.questions, data.data],
+                    questions: prev.questions.filter(q => q.id !== questionId)
                 } : null);
-                setShowAddQuestion(false);
-                resetNewQuestion();
-                toast.success("เพิ่มคำถามสำเร็จ");
+                toast.success("ลบคำถามสำเร็จ");
             } else {
-                toast.error(data.error || "เพิ่มคำถามไม่สำเร็จ");
+                toast.error(data.error || "ลบคำถามไม่สำเร็จ");
             }
         } catch {
             toast.error("เกิดข้อผิดพลาด");
@@ -215,6 +281,7 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
     };
 
     const resetNewQuestion = () => {
+        setEditingQuestionId(null);
         setNewQuestion({
             questionText: "",
             type: "MULTIPLE_CHOICE",
@@ -365,6 +432,19 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
                                                 <Badge variant="outline">{question.points} คะแนน</Badge>
                                             </div>
                                         </div>
+                                        <div className="flex gap-1">
+                                            <Button variant="ghost" size="icon" onClick={() => handleEditQuestion(question)}>
+                                                <Edit className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-destructive hover:bg-destructive/10"
+                                                onClick={() => handleDeleteQuestion(question.id)}
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 </CardHeader>
                                 <CardContent>
@@ -390,8 +470,10 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
             <Dialog open={showAddQuestion} onOpenChange={setShowAddQuestion}>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>เพิ่มคำถามใหม่</DialogTitle>
-                        <DialogDescription>กรอกข้อมูลคำถามและตัวเลือกคำตอบ</DialogDescription>
+                        <DialogTitle>{editingQuestionId ? "แก้ไขคำถาม" : "เพิ่มคำถามใหม่"}</DialogTitle>
+                        <DialogDescription>
+                            {editingQuestionId ? "แก้ไขรายละเอียดคำถามและตัวเลือก" : "กรอกข้อมูลคำถามและตัวเลือกคำตอบ"}
+                        </DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-6 py-4">
@@ -514,9 +596,9 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
                         <Button variant="outline" onClick={() => { setShowAddQuestion(false); resetNewQuestion(); }}>
                             ยกเลิก
                         </Button>
-                        <Button onClick={handleAddQuestion}>
-                            <Plus className="w-4 h-4 mr-2" />
-                            เพิ่มคำถาม
+                        <Button onClick={handleQuestionSubmit}>
+                            {editingQuestionId ? <Save className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                            {editingQuestionId ? "บันทึกการแก้ไข" : "เพิ่มคำถาม"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
