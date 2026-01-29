@@ -64,13 +64,12 @@ export default function NewQuizPage() {
     const [aiTopic, setAiTopic] = useState("");
     const [aiQuestionCount, setAiQuestionCount] = useState("5");
     const [aiDifficulty, setAiDifficulty] = useState("medium");
+    const [aiModel, setAiModel] = useState("openai");
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
     const [showPreview, setShowPreview] = useState(false);
 
-    useEffect(() => {
-        checkAuth();
-    }, [checkAuth]);
+    // ...
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
@@ -130,8 +129,10 @@ export default function NewQuizPage() {
                     topic: aiTopic,
                     questionCount: aiQuestionCount,
                     difficulty: aiDifficulty,
+                    model: aiModel,
                 }),
             });
+            // ... (rest is same)
 
             const data = await res.json();
 
@@ -348,7 +349,7 @@ export default function NewQuizPage() {
                                                 />
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                 <div className="space-y-2">
                                                     <Label>จำนวนคำถาม</Label>
                                                     <Select value={aiQuestionCount} onValueChange={setAiQuestionCount} disabled={isGenerating || isLoading}>
@@ -373,6 +374,19 @@ export default function NewQuizPage() {
                                                             <SelectItem value="easy">ง่าย</SelectItem>
                                                             <SelectItem value="medium">ปานกลาง</SelectItem>
                                                             <SelectItem value="hard">ยาก</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <Label>AI Model</Label>
+                                                    <Select value={aiModel} onValueChange={setAiModel} disabled={isGenerating || isLoading}>
+                                                        <SelectTrigger>
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="openai">Llama 3.1 (Default)</SelectItem>
+                                                            <SelectItem value="gemma">Gemma 2 (Google)</SelectItem>
                                                         </SelectContent>
                                                     </Select>
                                                 </div>

@@ -21,7 +21,7 @@ interface GeneratedQuestion {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { topic, questionCount, difficulty = "medium" } = body;
+        const { topic, questionCount, difficulty = "medium", model = "openai" } = body; // Default to openai
 
         if (!topic || !questionCount) {
             return NextResponse.json(
@@ -31,6 +31,29 @@ export async function POST(req: NextRequest) {
         }
 
         const count = Math.min(Math.max(parseInt(questionCount), 1), 20);
+
+        // Select Model
+        // Available NVIDIA NIM models (examples):
+        // - openai/gpt-oss-120b (Usually Llama or similar OSS)
+        // - google/gemma-2-9b-it
+        // - meta/llama3-70b-instruct
+        let selectedModel = "nvidia/llama-3.1-nemotron-70b-instruct"; // Default robust model on NVIDIA
+
+        if (model === "gemma") {
+            selectedModel = "google/gemma-2-9b-it";
+        } else if (model === "openai") {
+            // Keep user's previous preference or map to a high quality one
+            selectedModel = "meta/llama-3.1-405b-instruct";
+        }
+
+        // Note: The previous "openai/gpt-oss-120b" might be a specific endpoint name the user had. 
+        // If they want to keep it:
+        if (model === "openai") {
+            selectedModel = "meta/llama-3.1-405b-instruct"; // This is usually better on NVIDIA NIM, but let's stick to what works if unsure.
+            // Actually, the user had "openai/gpt-oss-120b". Let's assume that's what they want for "openai".
+            selectedModel = "openai/gpt-oss-120b";
+        }
+
 
         const prompt = `สร้างคำถามแบบ Quiz จำนวน ${count} ข้อ เกี่ยวกับหัวข้อ: "${topic}"
 ระดับความยาก: ${difficulty === "easy" ? "ง่าย" : difficulty === "hard" ? "ยาก" : "ปานกลาง"}
@@ -60,7 +83,7 @@ export async function POST(req: NextRequest) {
 7. ห้ามมี markdown หรือ code block ใดๆ ตอบเป็น JSON array ล้วนๆ`;
 
         const completion = await openai.chat.completions.create({
-            model: "openai/gpt-oss-120b",
+            model: selectedModel,
             messages: [{ role: "user", content: prompt }],
             temperature: 0.7,
             top_p: 1,

@@ -211,6 +211,13 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     }, [gameData?.status, pin]);
 
     const [isAutoPlay, setIsAutoPlay] = useState(false);
+    const [joinUrl, setJoinUrl] = useState("");
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setJoinUrl(`${window.location.origin}/join?pin=${pin}`);
+        }
+    }, [pin]);
 
     // ... existing timer ...
 
@@ -417,8 +424,20 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                             </p>
                         </div>
 
-                        <div className="my-4 animate-bounce-in transform scale-90 md:scale-100 origin-center">
-                            <div className="bg-white text-black p-4 md:p-8 rounded-[1.5rem] inline-block shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative">
+                        <div className="my-4 animate-bounce-in transform scale-90 md:scale-100 origin-center flex flex-col md:flex-row items-center justify-center gap-6 md:gap-12">
+                            {/* QR Code */}
+                            {joinUrl && (
+                                <div className="bg-white p-2 rounded-xl shadow-2xl rotate-[-3deg] hover:rotate-0 transition-transform duration-300">
+                                    <img
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl)}`}
+                                        alt="Join QR Code"
+                                        className="w-24 h-24 md:w-32 md:h-32"
+                                    />
+                                </div>
+                            )}
+
+                            {/* PIN Box */}
+                            <div className="bg-white text-black p-4 md:p-8 rounded-[1.5rem] inline-block shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative rotate-[2deg] hover:rotate-0 transition-transform duration-300">
                                 <span className="absolute -top-3 -right-3 rotate-12 bg-yellow-400 text-black font-bold px-3 py-1 rounded-lg shadow-lg text-xs md:text-sm">JOIN NOW!</span>
                                 <p className="text-sm md:text-lg font-bold mb-1 uppercase tracking-widest text-gray-500">Game PIN</p>
                                 <p className="text-5xl md:text-7xl font-black tracking-widest font-mono text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-purple-700">
