@@ -116,7 +116,7 @@ export default function Home() {
                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-cyan-500/20 blur-3xl rounded-full" />
                 <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-500/20 blur-3xl rounded-full" />
 
-                <Card className="glass-card border-t-white/30 border-l-white/30 backdrop-blur-2xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] transform rotate-1 hover:rotate-0 transition-all duration-500 rounded-[2.5rem] p-4">
+                <Card className="bg-slate-900/40 backdrop-blur-3xl border-t-white/20 border-l-white/20 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] transform rotate-1 hover:rotate-0 transition-all duration-500 rounded-[2.5rem] p-4 border-white/10">
                   <CardHeader className="text-center pb-8">
                     <div className="mx-auto w-20 h-20 rounded-[2rem] bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center mb-6 shadow-2xl shadow-cyan-500/40 transform -translate-y-2 animate-float">
                       <Play className="w-10 h-10 text-white fill-white" />
@@ -132,17 +132,17 @@ export default function Home() {
                     <div className="relative group">
                       <Input
                         type="text"
-                        placeholder="000000"
+                        placeholder="••••••"
                         value={gamePin}
                         onChange={(e) => setGamePin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        className="h-20 text-center text-4xl font-black font-mono tracking-[0.6em] bg-black/40 border-white/20 text-white rounded-2xl group-hover:border-cyan-400/50 transition-colors focus:border-cyan-400"
+                        className="h-20 text-center text-4xl font-black font-mono tracking-[0.6em] bg-black/60 border-white/10 text-white rounded-2xl group-hover:border-cyan-400/50 transition-colors focus:border-cyan-400 placeholder:text-white/20"
                         maxLength={6}
                       />
                       <div className="absolute inset-0 rounded-2xl border-2 border-white/0 group-focus-within:border-cyan-400/50 pointer-events-none transition-all" />
                     </div>
                     <Button
                       onClick={handleJoinGame}
-                      className="w-full h-16 text-xl font-black rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 border-none shadow-xl shadow-cyan-900/40 transition-all active:translate-y-1 transform disabled:opacity-50"
+                      className="w-full h-16 text-xl font-black rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 border-none shadow-xl shadow-cyan-900/40 transition-all active:translate-y-1 transform disabled:opacity-50 text-white"
                       disabled={gamePin.length !== 6}
                     >
                       กระโดดเข้าสู่เกม!
