@@ -87,12 +87,14 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         showLeaderboard: socketShowLeaderboard,
         endGame: socketEndGame,
         onPlayerJoined,
+        onPlayerLeft,
         onAnswerReceived,
     } = useSocket();
 
     const [gameData, setGameData] = useState<GameData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
+    const isUpdatingRef = useRef(false); // ref version to avoid stale closure
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [answeredCount, setAnsweredCount] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
@@ -147,70 +149,81 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         }
     }, [isAuthenticated, pin, isConnected, createRoom]);
 
-    // Socket event listeners
+    // ── Socket real-time events ──────────────────────────────────────────
     useEffect(() => {
-        const unsubPlayerJoined = onPlayerJoined(({ nickname }) => {
+        // Player joined → add to list immediately (no fetchGame needed)
+        const unsubPlayerJoined = onPlayerJoined(({ playerId, nickname }) => {
             playSound("join");
             toast.success(`${nickname} เข้าร่วมแล้ว!`);
-            fetchGame(); // Refresh player list
+            setGameData((prev) => {
+                if (!prev) return prev;
+                // Avoid duplicates
+                if (prev.players.some((p) => p.id === playerId)) return prev;
+                return {
+                    ...prev,
+                    players: [...prev.players, { id: playerId, nickname, score: 0 }],
+                };
+            });
         });
 
+        // Player left → remove from list immediately
+        const unsubPlayerLeft = onPlayerLeft(({ playerId }: { playerId: string }) => {
+            setGameData((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    players: prev.players.filter((p) => p.id !== playerId),
+                };
+            });
+        });
+
+        // Answer received → increment counter
         const unsubAnswerReceived = onAnswerReceived(() => {
             setAnsweredCount((prev) => prev + 1);
         });
 
         return () => {
             unsubPlayerJoined();
+            unsubPlayerLeft();
             unsubAnswerReceived();
         };
-    }, [onPlayerJoined, onAnswerReceived, playSound]);
+    }, [onPlayerJoined, onPlayerLeft, onAnswerReceived, playSound]);
 
+    // Initial fetch once on mount
     useEffect(() => {
         if (isAuthenticated && pin) {
             fetchGame();
         }
     }, [isAuthenticated, pin]);
 
-    // Timer effect
+    // ── Timer (ref-based to avoid stale closure) ─────────────────────────
+    const handleShowAnswerTimerRef = useRef<() => void>(() => { });
     useEffect(() => {
-        let timer: NodeJS.Timeout;
-
-        if (gameData?.status === "QUESTION" && timeRemaining > 0) {
-            timer = setInterval(() => {
-                setTimeRemaining((prev) => {
-                    if (prev <= 1) {
-                        handleShowAnswer();
-                        return 0;
-                    }
-                    if (prev <= 5) { // Beep on last 5 seconds
-                        audioSynth.playCountdown();
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        }
-
-        return () => {
-            if (timer) clearInterval(timer);
+        handleShowAnswerTimerRef.current = () => {
+            if (!isUpdatingRef.current) {
+                handleShowAnswer();
+            }
         };
-    }, [gameData?.status, timeRemaining, playSound]);
+    });
 
-    // Poll for players and answers
     useEffect(() => {
-        let pollInterval: NodeJS.Timeout;
+        if (gameData?.status !== "QUESTION" || timeRemaining <= 0) return;
 
-        if (gameData?.status === "LOBBY" || gameData?.status === "QUESTION") {
-            pollInterval = setInterval(async () => {
-                await fetchGame();
-            }, 1500);
-        }
+        const timer = setInterval(() => {
+            setTimeRemaining((prev) => {
+                if (prev <= 1) {
+                    handleShowAnswerTimerRef.current();
+                    return 0;
+                }
+                if (prev <= 5) audioSynth.playCountdown();
+                return prev - 1;
+            });
+        }, 1000);
 
-        return () => {
-            if (pollInterval) clearInterval(pollInterval);
-        };
-    }, [gameData?.status, pin]);
+        return () => clearInterval(timer);
+    }, [gameData?.status, timeRemaining]);
 
-    const [isAutoPlay, setIsAutoPlay] = useState(false);
+    const [isAutoPlay, setIsAutoPlay] = useState(true);
     const [joinUrl, setJoinUrl] = useState("");
 
     useEffect(() => {
@@ -244,18 +257,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         };
     }, [isAutoPlay, gameData?.status]); // Add specific dependencies if needed
 
-    // Auto Skip if all answered
-    useEffect(() => {
-        if (gameData?.status === "QUESTION" && gameData?.players?.length > 0) {
-            // Check if all players have answered
-            if (answeredCount >= gameData.players.length) {
-                const timer = setTimeout(() => {
-                    handleShowAnswer();
-                }, 1000);
-                return () => clearTimeout(timer);
-            }
-        }
-    }, [gameData?.status, answeredCount, gameData?.players?.length]);
+    // Auto Skip: handled below after handleShowAnswer is declared
 
 
     // Handle Game State Changes for Audio
@@ -295,6 +297,8 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     };
 
     const updateGameStatus = async (newStatus: string, questionIndex?: number) => {
+        if (isUpdatingRef.current) return false;
+        isUpdatingRef.current = true;
         setIsUpdating(true);
         try {
             const res = await fetch(`/api/games/${pin}`, {
@@ -318,6 +322,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
             toast.error("เกิดข้อผิดพลาด");
             return false;
         } finally {
+            isUpdatingRef.current = false;
             setIsUpdating(false);
         }
     };
@@ -337,12 +342,24 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     };
 
     const handleShowAnswer = useCallback(async () => {
-        if (isUpdating) return;
+        if (isUpdatingRef.current) return;
         const success = await updateGameStatus("SHOWING_ANSWER");
         if (success) {
             socketShowAnswer(pin);
         }
-    }, [isUpdating, pin, socketShowAnswer]);
+    }, [pin, socketShowAnswer]);
+
+    // Auto Skip if all answered (placed here so handleShowAnswer is already declared)
+    useEffect(() => {
+        if (gameData?.status !== "QUESTION") return;
+        if (!gameData?.players?.length) return;
+        if (answeredCount < gameData.players.length) return;
+
+        const timer = setTimeout(() => {
+            handleShowAnswer();
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [gameData?.status, answeredCount, gameData?.players?.length, handleShowAnswer]);
 
     const handleShowLeaderboard = async () => {
         const success = await updateGameStatus("LEADERBOARD");
@@ -392,90 +409,100 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
             <div className="blob blob-3"></div>
             <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] opacity-10 mix-blend-overlay"></div>
 
-            {/* Audio Control */}
-            <div className="fixed top-6 right-6 z-50 flex gap-4">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsAutoPlay(!isAutoPlay)}
-                    className={`glass-panel rounded-full w-12 h-12 transition-all ${isAutoPlay ? 'bg-green-500/50 text-white' : 'text-white/50 hover:bg-white/20'}`}
-                    title={isAutoPlay ? "Auto Play ON" : "Auto Play OFF"}
-                >
-                    {isAutoPlay ? <Play className="w-6 h-6 animate-pulse" /> : <Play className="w-6 h-6 opacity-50" />}
-                </Button>
+            {/* Audio Control - only show during active game, not in LOBBY */}
+            {gameData.status !== "LOBBY" && (
+                <div className="fixed bottom-6 left-6 z-50 flex gap-4">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsAutoPlay(!isAutoPlay)}
+                        className={`glass-panel rounded-full w-12 h-12 transition-all ${isAutoPlay ? 'bg-green-500/50 text-white' : 'text-white/50 hover:bg-white/20'}`}
+                        title={isAutoPlay ? "Auto Play ON" : "Auto Play OFF"}
+                    >
+                        {isAutoPlay ? <Play className="w-6 h-6 animate-pulse" /> : <Play className="w-6 h-6 opacity-50" />}
+                    </Button>
 
-                <Button variant="ghost" size="icon" onClick={toggleMute} className="text-white hover:bg-white/20 glass-panel rounded-full w-12 h-12">
-                    {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
-                </Button>
-            </div>
+                    <Button variant="ghost" size="icon" onClick={toggleMute} className="text-white hover:bg-white/20 glass-panel rounded-full w-12 h-12">
+                        {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+                    </Button>
+                </div>
+            )}
 
             {/* LOBBY */}
             {gameData.status === "LOBBY" && (
-                <div className="h-screen w-full flex flex-col items-center justify-between p-4 md:p-6 relative z-10 overflow-hidden">
-                    {/* Header Section */}
-                    <div className="w-full max-w-5xl animate-float text-center pt-4 flex-shrink-0">
-                        <div className="mb-4 glass-card rounded-2xl p-4 md:p-8 relative overflow-hidden border-t-white/30 mx-auto max-w-3xl">
-                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500"></div>
-                            <h1 className="text-2xl sm:text-3xl md:text-5xl font-black mb-2 tracking-tight drop-shadow-xl break-words line-clamp-2">
+                <div className="h-screen w-full flex flex-col relative z-10 overflow-hidden">
+                    {/* Top Bar: Title */}
+                    <div className="flex-shrink-0 w-full px-6 pt-4 pb-2">
+                        <div className="glass-card rounded-2xl px-6 py-3 relative overflow-hidden max-w-4xl mx-auto text-center">
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500"></div>
+                            <h1 className="text-xl sm:text-2xl md:text-4xl font-black tracking-tight drop-shadow-xl break-words line-clamp-1">
                                 {gameData.quiz.title}
                             </h1>
-                            <p className="text-base md:text-xl text-white/90 font-light px-4">
-                                เข้าร่วมที่ <span className="font-mono font-bold text-cyan-300 bg-black/30 px-2 py-0.5 rounded-lg border border-cyan-500/30 inline-block">kaquiz.com/join</span>
+                            <p className="text-sm md:text-base text-white/80 font-light mt-1">
+                                เข้าร่วมที่ <span className="font-mono font-bold text-cyan-300 bg-black/30 px-2 py-0.5 rounded-lg border border-cyan-500/30 inline-block">{joinUrl || `${typeof window !== 'undefined' ? window.location.host : ''}/join`}</span>
                             </p>
                         </div>
+                    </div>
 
-                        <div className="my-4 animate-bounce-in transform scale-90 md:scale-100 origin-center flex flex-col md:flex-row items-center justify-center gap-6 md:gap-12">
+                    {/* Middle: 2-column layout */}
+                    <div className="flex-1 flex min-h-0 gap-4 px-6 py-3">
+                        {/* Left: QR + PIN */}
+                        <div className="flex flex-col items-center justify-center gap-4 flex-shrink-0 w-auto">
                             {/* QR Code */}
                             {joinUrl && (
-                                <div className="bg-white p-2 rounded-xl shadow-2xl rotate-[-3deg] hover:rotate-0 transition-transform duration-300">
+                                <div className="bg-white p-2 rounded-xl shadow-2xl rotate-[-2deg] hover:rotate-0 transition-transform duration-300">
                                     <img
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl)}`}
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`}
                                         alt="Join QR Code"
-                                        className="w-24 h-24 md:w-32 md:h-32"
+                                        className="w-36 h-36 md:w-44 md:h-44"
                                     />
                                 </div>
                             )}
-
                             {/* PIN Box */}
-                            <div className="bg-white text-black p-4 md:p-8 rounded-[1.5rem] inline-block shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative rotate-[2deg] hover:rotate-0 transition-transform duration-300">
-                                <span className="absolute -top-3 -right-3 rotate-12 bg-yellow-400 text-black font-bold px-3 py-1 rounded-lg shadow-lg text-xs md:text-sm">JOIN NOW!</span>
-                                <p className="text-sm md:text-lg font-bold mb-1 uppercase tracking-widest text-gray-500">Game PIN</p>
-                                <p className="text-5xl md:text-7xl font-black tracking-widest font-mono text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-purple-700">
+                            <div className="bg-white text-black px-6 py-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative rotate-[1deg] hover:rotate-0 transition-transform duration-300 text-center">
+                                <span className="absolute -top-2.5 -right-2.5 rotate-12 bg-yellow-400 text-black font-bold px-2 py-0.5 rounded-lg shadow-lg text-xs">JOIN NOW!</span>
+                                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-0.5">Game PIN</p>
+                                <p className="text-4xl md:text-6xl font-black tracking-widest font-mono text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-purple-700">
                                     {pin}
                                 </p>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Players Scrollable Area */}
-                    <div className="flex-1 w-full max-w-6xl mx-auto overflow-y-auto min-h-0 my-4 px-2">
-                        <div className="flex flex-wrap justify-center content-start gap-3">
-                            {gameData.players.map((player) => (
-                                <div key={player.id} className="animate-in fade-in zoom-in duration-300">
-                                    <Badge className="text-sm md:text-lg py-2 px-4 bg-black/40 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg text-white rounded-lg transition-all hover:-translate-y-1 max-w-[180px] truncate">
-                                        <div className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse flex-shrink-0"></div>
-                                        {player.nickname}
-                                    </Badge>
+                        {/* Right: Player list */}
+                        <div className="flex-1 flex flex-col min-h-0 glass-card rounded-2xl p-3">
+                            <p className="text-xs uppercase font-bold tracking-widest text-white/50 mb-2 flex-shrink-0 flex items-center gap-2">
+                                <Users className="w-3 h-3" /> ผู้เล่น ({gameData.players.length})
+                            </p>
+                            <div className="flex-1 overflow-y-auto min-h-0">
+                                <div className="flex flex-wrap content-start gap-2">
+                                    {gameData.players.map((player) => (
+                                        <div key={player.id} className="animate-in fade-in zoom-in duration-300">
+                                            <Badge className="text-sm py-1.5 px-3 bg-black/40 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg text-white rounded-lg transition-all hover:-translate-y-1 max-w-[160px] truncate">
+                                                <div className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse flex-shrink-0"></div>
+                                                {player.nickname}
+                                            </Badge>
+                                        </div>
+                                    ))}
+                                    {gameData.players.length === 0 && (
+                                        <div className="flex flex-col items-center justify-center opacity-60 animate-pulse w-full py-8">
+                                            <Loader2 className="w-8 h-8 mb-2 animate-spin" />
+                                            <p className="text-base font-medium">Waiting for players...</p>
+                                        </div>
+                                    )}
                                 </div>
-                            ))}
-                            {gameData.players.length === 0 && (
-                                <div className="flex flex-col items-center justify-center opacity-60 animate-pulse w-full py-8">
-                                    <Loader2 className="w-8 h-8 md:w-10 md:h-10 mb-2 animate-spin-slow" />
-                                    <p className="text-lg md:text-xl font-medium">Waiting for players...</p>
-                                </div>
-                            )}
+                            </div>
                         </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="w-full glass-panel border-t border-white/10 flex items-center justify-between p-4 md:p-6 backdrop-blur-xl z-20 flex-shrink-0 mt-auto rounded-t-2xl">
+                    <div className="flex-shrink-0 w-full glass-panel border-t border-white/10 flex items-center justify-between px-6 py-3 backdrop-blur-xl z-20">
                         <div className="flex items-center gap-3">
                             <div className="bg-white/10 p-2 rounded-full">
-                                <Users className="w-6 h-6" />
+                                <Users className="w-5 h-5" />
                             </div>
                             <div className="text-left leading-tight">
-                                <p className="text-[10px] md:text-xs text-white/60 uppercase font-bold tracking-wider">Players</p>
-                                <span className="text-xl md:text-2xl font-black">{gameData.players.length}</span>
+                                <p className="text-[10px] text-white/60 uppercase font-bold tracking-wider">Players</p>
+                                <span className="text-xl font-black">{gameData.players.length}</span>
                             </div>
                         </div>
 
@@ -483,9 +510,9 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                             size="lg"
                             onClick={handleStartGame}
                             disabled={gameData.players.length === 0 || isUpdating}
-                            className="h-14 md:h-16 px-8 md:px-12 text-xl md:text-2xl font-black rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white shadow-[0_0_30px_rgba(168,85,247,0.4)] border-none btn-juicy"
+                            className="h-12 px-8 md:px-12 text-lg md:text-xl font-black rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white shadow-[0_0_30px_rgba(168,85,247,0.4)] border-none btn-juicy"
                         >
-                            {isUpdating ? <Loader2 className="w-6 h-6 animate-spin" /> : "START GAME"}
+                            {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : "START GAME"}
                         </Button>
                     </div>
                 </div>

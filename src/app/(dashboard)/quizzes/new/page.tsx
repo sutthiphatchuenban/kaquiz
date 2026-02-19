@@ -64,12 +64,16 @@ export default function NewQuizPage() {
     const [aiTopic, setAiTopic] = useState("");
     const [aiQuestionCount, setAiQuestionCount] = useState("5");
     const [aiDifficulty, setAiDifficulty] = useState("medium");
-    const [aiModel, setAiModel] = useState("openai");
+    const [aiModel, setAiModel] = useState("gpt-oss-20b");
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
     const [showPreview, setShowPreview] = useState(false);
 
     // ...
+
+    useEffect(() => {
+        checkAuth();
+    }, []);
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
@@ -218,7 +222,7 @@ export default function NewQuizPage() {
         }
     };
 
-    if (authLoading) {
+    if (authLoading && !isAuthenticated) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -232,9 +236,7 @@ export default function NewQuizPage() {
             <nav className="border-b bg-card sticky top-0 z-50">
                 <div className="container mx-auto px-4 h-16 flex items-center justify-between">
                     <Link href="/dashboard" className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                            <Sparkles className="w-5 h-5 text-primary-foreground" />
-                        </div>
+                        <img src="/favicon.ico" alt="KaQuiz" className="w-10 h-10 rounded-xl object-contain" />
                         <span className="text-xl font-bold tracking-tight">KaQuiz</span>
                     </Link>
                 </div>
@@ -385,11 +387,13 @@ export default function NewQuizPage() {
                                                             <SelectValue />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            <SelectItem value="openai">Llama 3.1 (Default)</SelectItem>
-                                                            <SelectItem value="gemma">Gemma 2 (Google)</SelectItem>
+                                                            <SelectItem value="gpt-oss-20b">GPT-OSS 20B (Fast)</SelectItem>
+                                                            <SelectItem value="gpt-oss-120b">GPT-OSS 120B (Best)</SelectItem>
+                                                            <SelectItem value="ministral-14b">Ministral 14B (Balanced)</SelectItem>
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
+
                                             </div>
 
                                             <Button

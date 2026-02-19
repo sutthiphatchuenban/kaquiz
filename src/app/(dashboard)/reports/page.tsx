@@ -115,9 +115,7 @@ export default function ReportsPage() {
             <nav className="border-b bg-card sticky top-0 z-50">
                 <div className="container mx-auto px-4 h-16 flex items-center justify-between">
                     <Link href="/dashboard" className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                            <Sparkles className="w-5 h-5 text-primary-foreground" />
-                        </div>
+                        <img src="/favicon.ico" alt="KaQuiz" className="w-10 h-10 rounded-xl object-contain" />
                         <span className="text-xl font-bold tracking-tight">KaQuiz</span>
                     </Link>
                 </div>

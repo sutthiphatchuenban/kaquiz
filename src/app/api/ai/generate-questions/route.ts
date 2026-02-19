@@ -21,7 +21,7 @@ interface GeneratedQuestion {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { topic, questionCount, difficulty = "medium", model = "openai" } = body; // Default to openai
+        const { topic, questionCount, difficulty = "medium", model = "gpt-oss-20b" } = body;
 
         if (!topic || !questionCount) {
             return NextResponse.json(
@@ -32,36 +32,35 @@ export async function POST(req: NextRequest) {
 
         const count = Math.min(Math.max(parseInt(questionCount), 1), 20);
 
-        // Select Model
-        // Available NVIDIA NIM models (examples):
-        // - openai/gpt-oss-120b (Usually Llama or similar OSS)
-        // - google/gemma-2-9b-it
-        // - meta/llama3-70b-instruct
-        let selectedModel = "nvidia/llama-3.1-nemotron-70b-instruct"; // Default robust model on NVIDIA
+        // Map model selection to NVIDIA NIM model IDs
+        const modelMap: Record<string, string> = {
+            "gpt-oss-20b": "openai/gpt-oss-20b",
+            "gpt-oss-120b": "openai/gpt-oss-120b",
+            "ministral-14b": "mistralai/ministral-14b-instruct-2512",
+        };
 
-        if (model === "gemma") {
-            selectedModel = "google/gemma-2-9b-it";
-        } else if (model === "openai") {
-            // Keep user's previous preference or map to a high quality one
-            selectedModel = "meta/llama-3.1-405b-instruct";
+        const selectedModel = modelMap[model] || "openai/gpt-oss-20b";
+
+        // ── Batch strategy ────────────────────────────────────────────────
+        // Cap each batch at 5 questions to avoid token-limit truncation.
+        // Multiple batches are fired concurrently with Promise.all.
+        const BATCH_SIZE = 5;
+        const batches: number[] = [];
+        let remaining = count;
+        while (remaining > 0) {
+            batches.push(Math.min(remaining, BATCH_SIZE));
+            remaining -= BATCH_SIZE;
         }
 
-        // Note: The previous "openai/gpt-oss-120b" might be a specific endpoint name the user had. 
-        // If they want to keep it:
-        if (model === "openai") {
-            selectedModel = "meta/llama-3.1-405b-instruct"; // This is usually better on NVIDIA NIM, but let's stick to what works if unsure.
-            // Actually, the user had "openai/gpt-oss-120b". Let's assume that's what they want for "openai".
-            selectedModel = "openai/gpt-oss-120b";
-        }
-
-
-        const prompt = `สร้างคำถามแบบ Quiz จำนวน ${count} ข้อ เกี่ยวกับหัวข้อ: "${topic}"
+        const buildPrompt = (batchCount: number, batchIndex: number) =>
+            `สร้างคำถามแบบ Quiz จำนวน ${batchCount} ข้อ เกี่ยวกับหัวข้อ: "${topic}"
 ระดับความยาก: ${difficulty === "easy" ? "ง่าย" : difficulty === "hard" ? "ยาก" : "ปานกลาง"}
+${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} — ห้ามซ้ำกับชุดก่อนหน้า)` : ""}
 
 กรุณาตอบเป็น JSON array เท่านั้น ไม่ต้องมี markdown หรือข้อความอื่น โดยแต่ละคำถามต้องมีรูปแบบดังนี้:
 [
   {
-    "questionText": "คำถาม",
+    "questionText": "คำถามสั้นๆ",
     "answers": [
       {"answerText": "ตัวเลือก 1", "isCorrect": true, "color": "red", "order": 0},
       {"answerText": "ตัวเลือก 2", "isCorrect": false, "color": "blue", "order": 1},
@@ -80,31 +79,35 @@ export async function POST(req: NextRequest) {
 4. timeLimit ควรเป็น 20-30 วินาที
 5. points ควรเป็น 1000
 6. คำถามและคำตอบต้องเป็นภาษาไทย (ยกเว้นหัวข้อเป็นภาษาอื่น)
-7. ห้ามมี markdown หรือ code block ใดๆ ตอบเป็น JSON array ล้วนๆ`;
+7. ห้ามมี markdown หรือ code block ใดๆ ตอบเป็น JSON array ล้วนๆ
+8. คำถามต้องไม่ยาวเกิน 100 ตัวอักษร ตัวเลือกไม่ยาวเกิน 50 ตัวอักษร
+9. ต้องตอบให้ครบ ${batchCount} ข้อและเป็น JSON ที่ถูกต้องสมบูรณ์`;
 
-        const completion = await openai.chat.completions.create({
-            model: selectedModel,
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.7,
-            top_p: 1,
-            max_tokens: 4096,
-        });
-
-        const responseText = completion.choices[0]?.message?.content || "";
+        // Fire all batches concurrently
+        const batchResults = await Promise.all(
+            batches.map((batchCount, batchIndex) =>
+                openai.chat.completions.create({
+                    model: selectedModel,
+                    messages: [{ role: "user", content: buildPrompt(batchCount, batchIndex) }],
+                    temperature: 0.7,
+                    top_p: 0.9,
+                    max_tokens: 2048, // 5 questions fit well within 2048 tokens
+                })
+            )
+        );
 
         // Try to parse JSON from response
         let questions: GeneratedQuestion[] = [];
 
         try {
-            // Clean the response - remove markdown code blocks if present
-            let cleanedResponse = responseText.trim();
+            for (const [i, completion] of batchResults.entries()) {
+                const responseText = completion.choices[0]?.message?.content || "";
+                const finishReason = completion.choices[0]?.finish_reason;
+                console.log(`Batch ${i + 1}/${batches.length} — length: ${responseText.length}, finish: ${finishReason}`);
 
-            // Remove ```json and ``` if present
-            if (cleanedResponse.startsWith("```")) {
-                cleanedResponse = cleanedResponse.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+                const parsed = parseAIResponse(responseText);
+                questions.push(...parsed);
             }
-
-            questions = JSON.parse(cleanedResponse);
 
             // Validate and fix the questions
             questions = questions.map((q, index) => {
@@ -137,11 +140,14 @@ export async function POST(req: NextRequest) {
                 return q;
             });
 
+            if (questions.length === 0) {
+                throw new Error("No valid questions parsed from AI response");
+            }
+
         } catch (parseError) {
             console.error("Failed to parse AI response:", parseError);
-            console.error("Raw response:", responseText);
             return NextResponse.json(
-                { success: false, error: "AI สร้างคำถามไม่สำเร็จ กรุณาลองใหม่" },
+                { success: false, error: "AI สร้างคำถามไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" },
                 { status: 500 }
             );
         }
@@ -161,4 +167,58 @@ export async function POST(req: NextRequest) {
             { status: 500 }
         );
     }
+}
+
+/**
+ * Robustly extract a JSON array from the raw AI response text.
+ *
+ * Handles these common LLM output issues:
+ *  1. Markdown code fences  (```json ... ```)
+ *  2. Extra prose before/after the JSON array
+ *  3. Trailing commas inside objects/arrays
+ *  4. Truncated responses — strips the last incomplete object so the
+ *     remaining array is still valid JSON and returns what we have.
+ */
+function parseAIResponse(raw: string): GeneratedQuestion[] {
+    let text = raw.trim();
+
+    // ── Step 1: strip markdown code fences ──────────────────────────────────
+    text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+    // ── Step 2: isolate first JSON array ────────────────────────────────────
+    const startIdx = text.indexOf("[");
+    if (startIdx === -1) throw new Error("No JSON array found in AI response");
+    let arrayText = text.slice(startIdx);
+
+    // ── Step 3: attempt direct parse ────────────────────────────────────────
+    try {
+        const parsed = JSON.parse(arrayText);
+        if (Array.isArray(parsed)) return parsed;
+    } catch { /* fall through */ }
+
+    // ── Step 4: remove trailing commas ──────────────────────────────────────
+    const noTrailing = arrayText.replace(/,\s*([}\]])/g, "$1");
+    try {
+        const parsed = JSON.parse(noTrailing);
+        if (Array.isArray(parsed)) return parsed;
+    } catch { /* fall through */ }
+
+    // ── Step 5: recovery from truncated response ─────────────────────────────
+    // Find the last complete top-level object by scanning for the last `}` and
+    // manually closing the array.
+    const closingText = noTrailing || arrayText;
+    const lastBrace = closingText.lastIndexOf("}");
+    if (lastBrace !== -1) {
+        // Slice up to and including the last `}`, then close the array
+        const recovered = closingText.slice(0, lastBrace + 1).replace(/,\s*$/, "") + "]";
+        try {
+            const parsed = JSON.parse(recovered);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                console.warn(`Truncation recovery: got ${parsed.length} complete question(s).`);
+                return parsed;
+            }
+        } catch { /* fall through */ }
+    }
+
+    throw new Error("Could not parse JSON even after all recovery attempts");
 }

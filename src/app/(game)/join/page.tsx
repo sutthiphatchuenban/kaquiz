@@ -26,9 +26,7 @@ function JoinForm() {
         <div className="min-h-screen game-bg flex flex-col items-center justify-center p-4">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 mb-8">
-                <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center">
-                    <Sparkles className="w-7 h-7 text-primary" />
-                </div>
+                <img src="/favicon.ico" alt="KaQuiz" className="w-14 h-14 rounded-2xl object-contain" />
                 <span className="text-3xl font-bold text-white">KaQuiz</span>
             </Link>
 
