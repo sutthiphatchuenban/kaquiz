@@ -45,9 +45,7 @@ export default function RegisterPage() {
             <Card className="w-full max-w-md border-none shadow-2xl">
                 <CardHeader className="text-center space-y-4">
                     <div className="flex justify-center">
-                        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center">
-                            <Sparkles className="w-8 h-8 text-primary-foreground" />
-                        </div>
+                        <img src="/favicon.ico" alt="KaQuiz" className="w-16 h-16 rounded-2xl object-contain" />
                     </div>
                     <CardTitle className="text-2xl font-bold">สร้างบัญชีใหม่</CardTitle>
                     <CardDescription>เริ่มต้นสร้าง Quiz สุดมันส์ของคุณ</CardDescription>
