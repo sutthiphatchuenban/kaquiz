@@ -325,8 +325,8 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             <div className="min-h-screen game-bg flex items-center justify-center p-4">
                 <Card className="w-full max-w-md border-none shadow-2xl">
                     <CardHeader className="text-center pb-4">
-                        <div className="mx-auto w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mb-4">
-                            <Sparkles className="w-8 h-8 text-primary-foreground" />
+                        <div className="mx-auto w-16 h-16 rounded-2xl mb-4 flex items-center justify-center">
+                            <img src="/favicon.ico" alt="KaQuiz" className="w-16 h-16 rounded-2xl object-contain" />
                         </div>
                         <CardTitle className="text-2xl">เข้าร่วม: {gameData.quiz.title}</CardTitle>
                         <CardDescription>
