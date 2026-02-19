@@ -144,6 +144,11 @@ export default function NewQuizPage() {
                 setGeneratedQuestions(data.data.questions);
                 setShowPreview(true);
                 toast.success(`สร้างคำถามสำเร็จ ${data.data.generatedCount} ข้อ!`);
+            } else if (data.hint === "change_model") {
+                toast.error(data.error || "AI สร้างคำถามไม่สำเร็จ", {
+                    description: "💡 ลองเปลี่ยน AI Model ในตัวเลือกด้านบน แล้วกดสร้างใหม่อีกครั้ง",
+                    duration: 6000,
+                });
             } else {
                 toast.error(data.error || "สร้างคำถามไม่สำเร็จ");
             }

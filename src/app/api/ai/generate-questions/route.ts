@@ -42,8 +42,6 @@ export async function POST(req: NextRequest) {
         const selectedModel = modelMap[model] || "openai/gpt-oss-20b";
 
         // ── Batch strategy ────────────────────────────────────────────────
-        // Cap each batch at 5 questions to avoid token-limit truncation.
-        // Multiple batches are fired concurrently with Promise.all.
         const BATCH_SIZE = 5;
         const batches: number[] = [];
         let remaining = count;
@@ -52,17 +50,21 @@ export async function POST(req: NextRequest) {
             remaining -= BATCH_SIZE;
         }
 
-        const buildPrompt = (batchCount: number, batchIndex: number) =>
-            `สร้างคำถามแบบ Quiz จำนวน ${batchCount} ข้อ เกี่ยวกับหัวข้อ: "${topic}"
-ระดับความยาก: ${difficulty === "easy" ? "ง่าย" : difficulty === "hard" ? "ยาก" : "ปานกลาง"}
-${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} — ห้ามซ้ำกับชุดก่อนหน้า)` : ""}
+        const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
+No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
+If asked to generate N questions, the array must have exactly N elements.`;
 
-กรุณาตอบเป็น JSON array เท่านั้น ไม่ต้องมี markdown หรือข้อความอื่น โดยแต่ละคำถามต้องมีรูปแบบดังนี้:
+        const buildPrompt = (batchCount: number, batchIndex: number) =>
+            `Generate ${batchCount} quiz questions about: "${topic}"
+Difficulty: ${difficulty}
+${batches.length > 1 ? `(Batch ${batchIndex + 1}/${batches.length} - make questions different from other batches)` : ""}
+
+Output ONLY this JSON array structure (no other text):
 [
   {
-    "questionText": "คำถามสั้นๆ",
+    "questionText": "คำถาม (ภาษาไทย, ไม่เกิน 100 ตัวอักษร)",
     "answers": [
-      {"answerText": "ตัวเลือก 1", "isCorrect": true, "color": "red", "order": 0},
+      {"answerText": "ตัวเลือก 1 (ไม่เกิน 50 ตัวอักษร)", "isCorrect": true, "color": "red", "order": 0},
       {"answerText": "ตัวเลือก 2", "isCorrect": false, "color": "blue", "order": 1},
       {"answerText": "ตัวเลือก 3", "isCorrect": false, "color": "green", "order": 2},
       {"answerText": "ตัวเลือก 4", "isCorrect": false, "color": "yellow", "order": 3}
@@ -72,26 +74,26 @@ ${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} 
   }
 ]
 
-กฎสำคัญ:
-1. แต่ละคำถามต้องมี 4 ตัวเลือก
-2. มีคำตอบที่ถูกต้องเพียง 1 ข้อ (isCorrect: true)
-3. color ต้องเป็น "red", "blue", "green", "yellow" ตามลำดับ
-4. timeLimit ควรเป็น 20-30 วินาที
-5. points ควรเป็น 1000
-6. คำถามและคำตอบต้องเป็นภาษาไทย (ยกเว้นหัวข้อเป็นภาษาอื่น)
-7. ห้ามมี markdown หรือ code block ใดๆ ตอบเป็น JSON array ล้วนๆ
-8. คำถามต้องไม่ยาวเกิน 100 ตัวอักษร ตัวเลือกไม่ยาวเกิน 50 ตัวอักษร
-9. ต้องตอบให้ครบ ${batchCount} ข้อและเป็น JSON ที่ถูกต้องสมบูรณ์`;
+Rules:
+- Exactly 4 answers per question
+- Exactly 1 answer with isCorrect: true
+- Colors must be exactly: "red","blue","green","yellow" in order
+- Questions and answers must be in Thai language
+- Return EXACTLY ${batchCount} questions
+- Output raw JSON array ONLY - no markdown, no backticks, no explanation`;
 
         // Fire all batches concurrently
         const batchResults = await Promise.all(
             batches.map((batchCount, batchIndex) =>
                 openai.chat.completions.create({
                     model: selectedModel,
-                    messages: [{ role: "user", content: buildPrompt(batchCount, batchIndex) }],
+                    messages: [
+                        { role: "system", content: SYSTEM_PROMPT },
+                        { role: "user", content: buildPrompt(batchCount, batchIndex) },
+                    ],
                     temperature: 0.7,
                     top_p: 0.9,
-                    max_tokens: 2048, // 5 questions fit well within 2048 tokens
+                    max_tokens: 2048,
                 })
             )
         );
@@ -104,6 +106,7 @@ ${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} 
                 const responseText = completion.choices[0]?.message?.content || "";
                 const finishReason = completion.choices[0]?.finish_reason;
                 console.log(`Batch ${i + 1}/${batches.length} — length: ${responseText.length}, finish: ${finishReason}`);
+                console.log(`Raw response preview: ${responseText.slice(0, 300)}`);
 
                 const parsed = parseAIResponse(responseText);
                 questions.push(...parsed);
@@ -141,13 +144,17 @@ ${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} 
             });
 
             if (questions.length === 0) {
-                throw new Error("No valid questions parsed from AI response");
+                throw new Error("PARSE_FAILED: No valid questions parsed from AI response");
             }
 
         } catch (parseError) {
             console.error("Failed to parse AI response:", parseError);
             return NextResponse.json(
-                { success: false, error: "AI สร้างคำถามไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" },
+                {
+                    success: false,
+                    error: "AI ตอบกลับไม่ถูกรูปแบบ — ลองเปลี่ยน Model แล้วสร้างใหม่อีกครั้ง",
+                    hint: "change_model",
+                },
                 { status: 500 }
             );
         }
@@ -162,8 +169,16 @@ ${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} 
         });
     } catch (error) {
         console.error("AI Generation Error:", error);
+        const errMsg = error instanceof Error ? error.message : "";
+        const isRateLimit = errMsg.includes("429") || errMsg.includes("rate");
         return NextResponse.json(
-            { success: false, error: "เกิดข้อผิดพลาดในการสร้างคำถาม" },
+            {
+                success: false,
+                error: isRateLimit
+                    ? "Model นี้ถูกใช้งานหนักเกินไป — ลองเปลี่ยนเป็น Model อื่น"
+                    : "เกิดข้อผิดพลาดในการสร้างคำถาม — ลองเปลี่ยน Model แล้วลองใหม่",
+                hint: "change_model",
+            },
             { status: 500 }
         );
     }
@@ -176,7 +191,8 @@ ${batches.length > 1 ? `(ชุดที่ ${batchIndex + 1}/${batches.length} 
  *  1. Markdown code fences  (```json ... ```)
  *  2. Extra prose before/after the JSON array
  *  3. Trailing commas inside objects/arrays
- *  4. Truncated responses — strips the last incomplete object so the
+ *  4. Wrapped object: { "questions": [...] }
+ *  5. Truncated responses — strips the last incomplete object so the
  *     remaining array is still valid JSON and returns what we have.
  */
 function parseAIResponse(raw: string): GeneratedQuestion[] {
@@ -185,39 +201,62 @@ function parseAIResponse(raw: string): GeneratedQuestion[] {
     // ── Step 1: strip markdown code fences ──────────────────────────────────
     text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
 
-    // ── Step 2: isolate first JSON array ────────────────────────────────────
-    const startIdx = text.indexOf("[");
-    if (startIdx === -1) throw new Error("No JSON array found in AI response");
-    let arrayText = text.slice(startIdx);
+    // ── Helper: remove trailing commas ──────────────────────────────────────
+    const cleanTrailing = (s: string) => s.replace(/,\s*([}\]])/g, "$1");
 
-    // ── Step 3: attempt direct parse ────────────────────────────────────────
-    try {
-        const parsed = JSON.parse(arrayText);
-        if (Array.isArray(parsed)) return parsed;
-    } catch { /* fall through */ }
-
-    // ── Step 4: remove trailing commas ──────────────────────────────────────
-    const noTrailing = arrayText.replace(/,\s*([}\]])/g, "$1");
-    try {
-        const parsed = JSON.parse(noTrailing);
-        if (Array.isArray(parsed)) return parsed;
-    } catch { /* fall through */ }
-
-    // ── Step 5: recovery from truncated response ─────────────────────────────
-    // Find the last complete top-level object by scanning for the last `}` and
-    // manually closing the array.
-    const closingText = noTrailing || arrayText;
-    const lastBrace = closingText.lastIndexOf("}");
-    if (lastBrace !== -1) {
-        // Slice up to and including the last `}`, then close the array
-        const recovered = closingText.slice(0, lastBrace + 1).replace(/,\s*$/, "") + "]";
+    // ── Helper: try to parse and return array ────────────────────────────────
+    const tryParse = (s: string): GeneratedQuestion[] | null => {
         try {
-            const parsed = JSON.parse(recovered);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                console.warn(`Truncation recovery: got ${parsed.length} complete question(s).`);
-                return parsed;
+            const parsed = JSON.parse(s);
+            if (Array.isArray(parsed)) return parsed;
+            // Handle { questions: [...] } or any object wrapping an array
+            if (parsed && typeof parsed === "object") {
+                for (const val of Object.values(parsed)) {
+                    if (Array.isArray(val) && (val as unknown[]).length > 0) {
+                        return val as GeneratedQuestion[];
+                    }
+                }
             }
         } catch { /* fall through */ }
+        return null;
+    };
+
+    // ── Step 2: try full text directly ──────────────────────────────────────
+    let result = tryParse(text) ?? tryParse(cleanTrailing(text));
+    if (result) return result;
+
+    // ── Step 3: bracket-match to find the JSON array ─────────────────────────
+    const startIdx = text.indexOf("[");
+    if (startIdx !== -1) {
+        // Walk forward counting brackets to find the matching ]
+        let depth = 0;
+        let endIdx = -1;
+        for (let i = startIdx; i < text.length; i++) {
+            if (text[i] === "[") depth++;
+            else if (text[i] === "]") {
+                depth--;
+                if (depth === 0) { endIdx = i; break; }
+            }
+        }
+
+        if (endIdx !== -1) {
+            const arrayText = text.slice(startIdx, endIdx + 1);
+            result = tryParse(arrayText) ?? tryParse(cleanTrailing(arrayText));
+            if (result) return result;
+        }
+
+        // ── Step 4: recovery from truncated response ─────────────────────────
+        const arrayText = text.slice(startIdx);
+        const noTrailing = cleanTrailing(arrayText);
+        const lastBrace = noTrailing.lastIndexOf("}");
+        if (lastBrace !== -1) {
+            const recovered = noTrailing.slice(0, lastBrace + 1).replace(/,\s*$/, "") + "]";
+            result = tryParse(recovered);
+            if (result && result.length > 0) {
+                console.warn(`Truncation recovery: got ${result.length} complete question(s).`);
+                return result;
+            }
+        }
     }
 
     throw new Error("Could not parse JSON even after all recovery attempts");
