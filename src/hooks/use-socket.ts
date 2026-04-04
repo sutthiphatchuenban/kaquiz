@@ -25,6 +25,9 @@ export function useSocket() {
     }, []);
 
     useEffect(() => {
+        // ❌ WEB-SOCKETS DISABLED FOR VERCEL COMPATIBILITY ❌
+        // We are using Fast Polling instead, so we don't try to connect socket.io anymore.
+        /*
         if (!socket) {
             const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
 
@@ -45,6 +48,7 @@ export function useSocket() {
                 });
             }
         }
+        */
 
         const handleConnect = () => {
             setIsConnected(true);
