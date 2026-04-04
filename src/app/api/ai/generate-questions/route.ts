@@ -46,8 +46,13 @@ export async function POST(req: NextRequest) {
 No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
 If asked to generate N questions, the array must have exactly N elements.`;
 
+        const existingList = (existingQuestions as string[]) || [];
+        const avoidSection = existingList.length > 0 
+            ? `\n\nIMPORTANT - DO NOT repeat these questions that were already generated:\n${existingList.slice(-20).map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nAsk about different aspects, events, or facts.`
+            : "";
+
         const userPrompt = `Generate ${totalTarget} quiz questions about: "${topic}"
-Difficulty: ${difficulty}
+Difficulty: ${difficulty}${avoidSection}
 
 Output ONLY this JSON array structure (no other text):
 [
@@ -70,8 +75,8 @@ Rules:
 - Colors must be exactly: "red","blue","green","yellow" in order
 - Questions and answers must be in Thai language
 - Return EXACTLY ${totalTarget} questions
-- Each question must be UNIQUE and different from all others
-- Output raw JSON array ONLY - no markdown, no backticks, no explanation`;
+- Each question must be UNIQUE, asking about completely different facts.
+- Output raw JSON array ONLY - no markdown, no explanation`;
 
         // Single API call
         const completion = await openai.chat.completions.create({
@@ -80,8 +85,10 @@ Rules:
                 { role: "system", content: SYSTEM_PROMPT },
                 { role: "user", content: userPrompt },
             ],
-            temperature: 0.2,
-            top_p: 0.7,
+            temperature: 0.8,
+            top_p: 0.9,
+            presence_penalty: 0.6,
+            frequency_penalty: 0.6,
             max_tokens: 8192,
         });
 
