@@ -66,6 +66,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                                     },
                                     orderBy: { order: "asc" },
                                 },
+                                playerAnswers: {
+                                    select: { playerId: true }
+                                },
                             },
                             orderBy: { order: "asc" },
                         },

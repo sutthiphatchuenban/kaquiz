@@ -257,13 +257,13 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         };
     }, [isAutoPlay, gameData?.status]); // Add specific dependencies if needed
 
-    // Poll for updates in LOBBY (fallback for missed socket events)
+    // Poll aggressively (No WebSocket needed)
     useEffect(() => {
         let interval: NodeJS.Timeout;
-        if (gameData?.status === "LOBBY") {
+        if (gameData?.status === "LOBBY" || gameData?.status === "QUESTION") {
             interval = setInterval(() => {
                 fetchGame();
-            }, 3000);
+            }, 1000); // 1 second fast polling
         }
         return () => {
             if (interval) clearInterval(interval);
@@ -296,6 +296,14 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
             if (data.success) {
                 setGameData(data.data);
+                
+                // --- ADDED FOR POLLING (Without WebSockets) ---
+                if (data.data.status === "QUESTION") {
+                    const currentQ = data.data.quiz.questions[data.data.currentQuestionIndex];
+                    if (currentQ?.playerAnswers) {
+                        setAnsweredCount(currentQ.playerAnswers.length);
+                    }
+                }
             } else {
                 toast.error("ไม่พบเกมนี้");
                 router.push("/quizzes");
