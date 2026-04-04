@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-    apiKey: process.env.NVIDIA_API_KEY,
-    baseURL: "https://integrate.api.nvidia.com/v1",
-});
+
 
 interface GeneratedQuestion {
     questionText: string;
@@ -20,6 +17,20 @@ interface GeneratedQuestion {
 
 export async function POST(req: NextRequest) {
     try {
+        const openai = new OpenAI({
+            apiKey: process.env.NVIDIA_API_KEY || "",
+            baseURL: "https://integrate.api.nvidia.com/v1",
+        });
+
+        const openrouter = new OpenAI({
+            apiKey: process.env.OPENROUTER_API_KEY || "",
+            baseURL: "https://openrouter.ai/api/v1",
+            defaultHeaders: {
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "Kaquiz",
+            }
+        });
+
         const body = await req.json();
         const { topic, count, difficulty = "medium", model = "gpt-oss-20b", existingQuestions = [] } = body;
 
@@ -32,15 +43,20 @@ export async function POST(req: NextRequest) {
 
         const totalTarget = Math.min(Math.max(parseInt(count.toString() || "5"), 1), 50);
 
-        // Map model selection to NVIDIA NIM model IDs
-        const modelMap: Record<string, string> = {
-            "mistral-small-4": "mistralai/mistral-small-4-119b-2603",
-            "gpt-oss-120b": "openai/gpt-oss-120b",
-            "gpt-oss-20b": "openai/gpt-oss-20b",
-            "gemma-3n": "google/gemma-3n-e4b-it",
+        // Map model selection
+        const modelMap: Record<string, { id: string; provider: "nvidia" | "openrouter" }> = {
+            "mistral-small-4": { id: "mistralai/mistral-small-4-119b-2603", provider: "nvidia" },
+            "gpt-oss-120b": { id: "openai/gpt-oss-120b", provider: "nvidia" },
+            "gpt-oss-20b": { id: "openai/gpt-oss-20b", provider: "nvidia" },
+            "gemma-3n": { id: "google/gemma-3n-e4b-it", provider: "nvidia" },
+            "qwen-3-next": { id: "qwen/qwen3-next-80b-a3b-instruct:free", provider: "openrouter" },
+            "minimax-m2-5": { id: "minimax/minimax-m2.5:free", provider: "openrouter" },
+            "nemotron-3-super": { id: "nvidia/nemotron-3-super-120b-a12b:free", provider: "openrouter" },
         };
 
-        const selectedModel = modelMap[model] || "openai/gpt-oss-20b";
+        const selectedModelConfig = modelMap[model] || modelMap["gpt-oss-20b"];
+        const selectedModel = selectedModelConfig.id;
+        const client = selectedModelConfig.provider === "openrouter" ? openrouter : openai;
 
         const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
 No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
@@ -79,7 +95,7 @@ Rules:
 - Output raw JSON array ONLY - no markdown, no explanation`;
 
         // Single API call
-        const completion = await openai.chat.completions.create({
+        const completion = await client.chat.completions.create({
             model: selectedModel,
             messages: [
                 { role: "system", content: SYSTEM_PROMPT },

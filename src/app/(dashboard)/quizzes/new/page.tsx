@@ -393,28 +393,49 @@ export default function NewQuizPage() {
                                                             <SelectValue />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            <SelectItem value="mistral-small-4">
-                                                                <div className="flex items-center gap-2">
-                                                                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Mistral_AI_logo_%282025%E2%80%93%29.svg/960px-Mistral_AI_logo_%282025%E2%80%93%29.svg.png" alt="Mistral" className="w-4 h-4 object-contain" />
-                                                                    <span>Mistral Small 4 119B</span>
-                                                                </div>
-                                                            </SelectItem>
+                                                            {/* NVIDIA Models */}
                                                             <SelectItem value="gpt-oss-120b">
                                                                 <div className="flex items-center gap-2">
                                                                     <img src="https://static.vecteezy.com/system/resources/previews/022/841/109/non_2x/chatgpt-logo-transparent-background-free-png.png" alt="OpenAI" className="w-4 h-4" />
-                                                                    <span>GPT-OSS 120B (Best)</span>
+                                                                    <span>GPT-OSS 120B</span>
                                                                 </div>
                                                             </SelectItem>
                                                             <SelectItem value="gpt-oss-20b">
                                                                 <div className="flex items-center gap-2">
                                                                     <img src="https://static.vecteezy.com/system/resources/previews/022/841/109/non_2x/chatgpt-logo-transparent-background-free-png.png" alt="OpenAI" className="w-4 h-4" />
-                                                                    <span>GPT-OSS 20B (Fast)</span>
+                                                                    <span>GPT-OSS 20B</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            <SelectItem value="mistral-small-4">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Mistral_AI_logo_%282025%E2%80%93%29.svg/960px-Mistral_AI_logo_%282025%E2%80%93%29.svg.png" alt="Mistral" className="w-4 h-4 object-contain" />
+                                                                    <span>Mistral Small 4</span>
                                                                 </div>
                                                             </SelectItem>
                                                             <SelectItem value="gemma-3n">
                                                                 <div className="flex items-center gap-2">
                                                                     <img src="https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06b.png" alt="Google" className="w-4 h-4 rounded-full" />
-                                                                    <span>Gemma 3N (Google)</span>
+                                                                    <span>Gemma 3N</span>
+                                                                </div>
+                                                            </SelectItem>
+
+                                                            {/* OpenRouter Models */}
+                                                            <SelectItem value="qwen-3-next">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Qwen_logo.svg/3840px-Qwen_logo.svg.png" alt="Qwen" className="w-4 h-4" />
+                                                                    <span>Qwen3 Next 80B</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            <SelectItem value="minimax-m2-5">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/minimax-color.png" alt="MiniMax" className="w-4 h-4" />
+                                                                    <span>MiniMax M2.5</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            <SelectItem value="nemotron-3-super">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://companieslogo.com/img/orig/NVDA-220e1e03.png?t=1722952498" alt="NVIDIA" className="w-4 h-4" />
+                                                                    <span>Nemotron 3 Super 120B</span>
                                                                 </div>
                                                             </SelectItem>
                                                         </SelectContent>
