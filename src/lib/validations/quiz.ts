@@ -23,7 +23,8 @@ export const quizSchema = z.object({
         .min(1, "กรุณากรอกชื่อ Quiz")
         .max(100, "ชื่อ Quiz ต้องไม่เกิน 100 ตัวอักษร"),
     description: z.string().max(500, "คำอธิบายต้องไม่เกิน 500 ตัวอักษร").optional(),
-    coverImage: z.string().url().optional().nullable(),
+    coverImage: z.string().url().optional().nullable().or(z.literal("")),
+    isPublished: z.boolean().default(false),
 });
 
 export const createQuizSchema = quizSchema;

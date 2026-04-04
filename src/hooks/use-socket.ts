@@ -33,19 +33,6 @@ export function useSocket() {
                 socket = io(socketUrl, {
                     transports: ["websocket"],
                 }) as TypedSocket;
-
-                socket.on("connect", () => {
-                    setIsConnected(true);
-                    console.log("External Socket connected");
-                    listenersRef.current.forEach((callbacks, event) => {
-                        callbacks.forEach(cb => socket?.on(event as any, cb as any));
-                    });
-                });
-
-                socket.on("disconnect", () => {
-                    setIsConnected(false);
-                    console.log("Socket disconnected");
-                });
             } else {
                 // Internal Next.js API Route (Localhost only)
                 fetch("/api/socket/io").finally(() => {
@@ -55,28 +42,43 @@ export function useSocket() {
                         path: "/api/socket/io",
                         transports: ["websocket"],
                     }) as TypedSocket;
-
-                    socket.on("connect", () => {
-                        setIsConnected(true);
-                        console.log("Socket connected");
-
-                        listenersRef.current.forEach((callbacks, event) => {
-                            callbacks.forEach(cb => socket?.on(event as any, cb as any));
-                        });
-                    });
-
-                    socket.on("disconnect", () => {
-                        setIsConnected(false);
-                        console.log("Socket disconnected");
-                    });
                 });
             }
-        } else {
-            setIsConnected(socket.connected);
+        }
+
+        const handleConnect = () => {
+            setIsConnected(true);
+            console.log("Socket connected");
+            // Re-attach all listeners for this specific hook instance
+            reAttachListeners();
+        };
+
+        const handleDisconnect = () => {
+            setIsConnected(false);
+            console.log("Socket disconnected");
+        };
+
+        const reAttachListeners = () => {
+            listenersRef.current.forEach((callbacks, event) => {
+                callbacks.forEach(cb => {
+                    socket?.off(event as any, cb as any); // Prevent duplicates
+                    socket?.on(event as any, cb as any);
+                });
+            });
+        }
+
+        socket?.on("connect", handleConnect);
+        socket?.on("disconnect", handleDisconnect);
+
+        // If already connected when effect runs
+        if (socket?.connected) {
+            setIsConnected(true);
+            reAttachListeners();
         }
 
         return () => {
-            // We don't disconnect globally here because multiple components might use it
+            socket?.off("connect", handleConnect);
+            socket?.off("disconnect", handleDisconnect);
         };
     }, []);
 

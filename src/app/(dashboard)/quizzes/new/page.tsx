@@ -64,12 +64,11 @@ export default function NewQuizPage() {
     const [aiTopic, setAiTopic] = useState("");
     const [aiQuestionCount, setAiQuestionCount] = useState("5");
     const [aiDifficulty, setAiDifficulty] = useState("medium");
-    const [aiModel, setAiModel] = useState("gpt-oss-20b");
+    const [aiModel, setAiModel] = useState("mistral-small-4");
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
     const [showPreview, setShowPreview] = useState(false);
-
-    // ...
+    const [generationProgress, setGenerationProgress] = useState(0);
 
     useEffect(() => {
         checkAuth();
@@ -131,19 +130,20 @@ export default function NewQuizPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     topic: aiTopic,
-                    questionCount: aiQuestionCount,
+                    count: aiQuestionCount,
                     difficulty: aiDifficulty,
                     model: aiModel,
                 }),
             });
-            // ... (rest is same)
 
             const data = await res.json();
 
-            if (data.success) {
+            if (data.success && data.data.questions) {
                 setGeneratedQuestions(data.data.questions);
                 setShowPreview(true);
-                toast.success(`สร้างคำถามสำเร็จ ${data.data.generatedCount} ข้อ!`);
+                toast.success(`สร้างคำถามสำเร็จ ${data.data.questions.length} ข้อ!`, {
+                    description: "ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ",
+                });
             } else if (data.hint === "change_model") {
                 toast.error(data.error || "AI สร้างคำถามไม่สำเร็จ", {
                     description: "💡 ลองเปลี่ยน AI Model ในตัวเลือกด้านบน แล้วกดสร้างใหม่อีกครั้ง",
@@ -152,8 +152,9 @@ export default function NewQuizPage() {
             } else {
                 toast.error(data.error || "สร้างคำถามไม่สำเร็จ");
             }
-        } catch {
-            toast.error("เกิดข้อผิดพลาด กรุณาลองใหม่");
+        } catch (error) {
+            console.error("AI Generation Error:", error);
+            toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อ AI");
         } finally {
             setIsGenerating(false);
         }
@@ -392,29 +393,64 @@ export default function NewQuizPage() {
                                                             <SelectValue />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            <SelectItem value="gpt-oss-20b">GPT-OSS 20B (Fast)</SelectItem>
-                                                            <SelectItem value="gpt-oss-120b">GPT-OSS 120B (Best)</SelectItem>
-                                                            <SelectItem value="ministral-14b">Ministral 14B (Balanced)</SelectItem>
+                                                            <SelectItem value="mistral-small-4">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Mistral_AI_logo_%282025%E2%80%93%29.svg/960px-Mistral_AI_logo_%282025%E2%80%93%29.svg.png" alt="Mistral" className="w-4 h-4 object-contain" />
+                                                                    <span>Mistral Small 4 119B</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            <SelectItem value="gpt-oss-120b">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://static.vecteezy.com/system/resources/previews/022/841/109/non_2x/chatgpt-logo-transparent-background-free-png.png" alt="OpenAI" className="w-4 h-4" />
+                                                                    <span>GPT-OSS 120B (Best)</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            <SelectItem value="gpt-oss-20b">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://static.vecteezy.com/system/resources/previews/022/841/109/non_2x/chatgpt-logo-transparent-background-free-png.png" alt="OpenAI" className="w-4 h-4" />
+                                                                    <span>GPT-OSS 20B (Fast)</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            <SelectItem value="gemma-3n">
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src="https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06b.png" alt="Google" className="w-4 h-4 rounded-full" />
+                                                                    <span>Gemma 3N (Google)</span>
+                                                                </div>
+                                                            </SelectItem>
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
 
                                             </div>
 
+                                            {isGenerating && (
+                                                <div className="space-y-2 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                    <div className="flex justify-center text-sm font-medium text-purple-600 dark:text-purple-400">
+                                                        <span className="flex items-center gap-2">
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                            AI กำลังสร้างคำถามให้คุณ...
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                                        <div className="h-full w-1/3 bg-gradient-to-r from-purple-500 via-blue-500 to-indigo-500 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite] shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             <Button
                                                 type="button"
                                                 onClick={handleGenerateQuestions}
                                                 disabled={isGenerating || !aiTopic.trim()}
-                                                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                                                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 h-12 text-lg shadow-lg hover:shadow-purple-500/20 transition-all"
                                             >
                                                 {isGenerating ? (
                                                     <>
-                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                        กำลังสร้างคำถาม...
+                                                        <Sparkles className="mr-2 h-5 w-5 animate-pulse" />
+                                                        กำลังประมวลผล...
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <Wand2 className="mr-2 h-4 w-4" />
+                                                        <Wand2 className="mr-2 h-5 w-5" />
                                                         สร้างคำถามด้วย AI
                                                     </>
                                                 )}

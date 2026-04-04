@@ -87,11 +87,14 @@ export const useAuthStore = create<AuthState>()(
 
                     if (data.success && data.data) {
                         set({ user: data.data, isAuthenticated: true });
-                    } else {
+                    } else if (res.status === 401) {
+                        // Real auth failure (expired/invalid token) → logout
                         set({ user: null, isAuthenticated: false });
                     }
+                    // For 500 (DB timeout etc.), keep existing state — don't logout
                 } catch {
-                    set({ user: null, isAuthenticated: false });
+                    // Network error — keep existing state, don't logout
+                    console.warn("checkAuth: network error, keeping cached auth state");
                 } finally {
                     set({ isLoading: false });
                 }

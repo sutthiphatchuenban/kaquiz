@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface Answer {
     id: string;
@@ -96,79 +97,91 @@ const initialState = {
     lastPointsEarned: 0,
 };
 
-export const useGameStore = create<GameState>()((set) => ({
-    ...initialState,
+export const useGameStore = create<GameState>()(
+    persist(
+        (set) => ({
+            ...initialState,
 
-    setGameSession: (data) => {
-        set({
-            pin: data.pin,
-            status: data.status,
-            quiz: data.quiz,
-            players: data.players,
-            currentQuestionIndex: data.currentQuestionIndex,
-        });
-    },
+            setGameSession: (data) => {
+                set({
+                    pin: data.pin,
+                    status: data.status,
+                    quiz: data.quiz,
+                    players: data.players,
+                    currentQuestionIndex: data.currentQuestionIndex,
+                });
+            },
 
-    setStatus: (status) => {
-        set({ status });
-    },
+            setStatus: (status) => {
+                set({ status });
+            },
 
-    setPlayers: (players) => {
-        set({ players });
-    },
+            setPlayers: (players) => {
+                set({ players });
+            },
 
-    addPlayer: (player) => {
-        set((state) => ({
-            players: [...state.players, player],
-        }));
-    },
+            addPlayer: (player) => {
+                set((state) => ({
+                    players: [...state.players, player],
+                }));
+            },
 
-    removePlayer: (playerId) => {
-        set((state) => ({
-            players: state.players.filter((p) => p.id !== playerId),
-        }));
-    },
+            removePlayer: (playerId) => {
+                set((state) => ({
+                    players: state.players.filter((p) => p.id !== playerId),
+                }));
+            },
 
-    setCurrentQuestion: (index) => {
-        set({
-            currentQuestionIndex: index,
-            hasAnswered: false,
-            answeredCount: 0,
-            lastAnswerCorrect: null,
-            lastPointsEarned: 0,
-        });
-    },
+            setCurrentQuestion: (index) => {
+                set({
+                    currentQuestionIndex: index,
+                    hasAnswered: false,
+                    answeredCount: 0,
+                    lastAnswerCorrect: null,
+                    lastPointsEarned: 0,
+                });
+            },
 
-    setTimeRemaining: (time) => {
-        set({ timeRemaining: time });
-    },
+            setTimeRemaining: (time) => {
+                set({ timeRemaining: time });
+            },
 
-    incrementAnsweredCount: () => {
-        set((state) => ({
-            answeredCount: state.answeredCount + 1,
-        }));
-    },
+            incrementAnsweredCount: () => {
+                set((state) => ({
+                    answeredCount: state.answeredCount + 1,
+                }));
+            },
 
-    resetAnsweredCount: () => {
-        set({ answeredCount: 0 });
-    },
+            resetAnsweredCount: () => {
+                set({ answeredCount: 0 });
+            },
 
-    setPlayer: (id, nickname) => {
-        set({ playerId: id, playerNickname: nickname });
-    },
+            setPlayer: (id, nickname) => {
+                set({ playerId: id, playerNickname: nickname });
+            },
 
-    setHasAnswered: (hasAnswered) => {
-        set({ hasAnswered });
-    },
+            setHasAnswered: (hasAnswered) => {
+                set({ hasAnswered });
+            },
 
-    setAnswerResult: (isCorrect, points) => {
-        set({
-            lastAnswerCorrect: isCorrect,
-            lastPointsEarned: points,
-        });
-    },
+            setAnswerResult: (isCorrect, points) => {
+                set({
+                    lastAnswerCorrect: isCorrect,
+                    lastPointsEarned: points,
+                });
+            },
 
-    resetGame: () => {
-        set(initialState);
-    },
-}));
+            resetGame: () => {
+                set(initialState);
+            },
+        }),
+        {
+            name: "kaquiz-game",
+            partialize: (state) => ({
+                playerId: state.playerId,
+                playerNickname: state.playerNickname,
+                pin: state.pin,
+            }),
+        }
+    )
+);

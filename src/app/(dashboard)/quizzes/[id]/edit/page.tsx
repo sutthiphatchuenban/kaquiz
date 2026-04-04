@@ -383,7 +383,30 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
                                 <Switch
                                     id="published"
                                     checked={quiz.isPublished}
-                                    onCheckedChange={(checked) => setQuiz({ ...quiz, isPublished: checked })}
+                                    onCheckedChange={async (checked) => {
+                                        setQuiz({ ...quiz, isPublished: checked });
+                                        // Auto-save when toggling publish status
+                                        try {
+                                            const res = await fetch(`/api/quizzes/${id}`, {
+                                                method: "PUT",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({
+                                                    ...quiz,
+                                                    isPublished: checked,
+                                                }),
+                                            });
+                                            const data = await res.json();
+                                            if (data.success) {
+                                                toast.success(checked ? "เผยแพร่แล้ว" : "ยกเลิกการเผยแพร่แล้ว");
+                                            } else {
+                                                toast.error(data.error || "บันทึกไม่สำเร็จ");
+                                                setQuiz({ ...quiz, isPublished: !checked });
+                                            }
+                                        } catch {
+                                            toast.error("เกิดข้อผิดพลาด");
+                                            setQuiz({ ...quiz, isPublished: !checked });
+                                        }
+                                    }}
                                 />
                             </div>
                         </div>

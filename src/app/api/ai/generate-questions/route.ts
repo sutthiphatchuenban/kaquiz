@@ -21,43 +21,33 @@ interface GeneratedQuestion {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { topic, questionCount, difficulty = "medium", model = "gpt-oss-20b" } = body;
+        const { topic, count, difficulty = "medium", model = "gpt-oss-20b", existingQuestions = [] } = body;
 
-        if (!topic || !questionCount) {
+        if (!topic || !count) {
             return NextResponse.json(
                 { success: false, error: "กรุณากรอกหัวข้อและจำนวนคำถาม" },
                 { status: 400 }
             );
         }
 
-        const count = Math.min(Math.max(parseInt(questionCount), 1), 20);
+        const totalTarget = Math.min(Math.max(parseInt(count.toString() || "5"), 1), 50);
 
         // Map model selection to NVIDIA NIM model IDs
         const modelMap: Record<string, string> = {
-            "gpt-oss-20b": "openai/gpt-oss-20b",
+            "mistral-small-4": "mistralai/mistral-small-4-119b-2603",
             "gpt-oss-120b": "openai/gpt-oss-120b",
-            "ministral-14b": "mistralai/ministral-14b-instruct-2512",
+            "gpt-oss-20b": "openai/gpt-oss-20b",
+            "gemma-3n": "google/gemma-3n-e4b-it",
         };
 
         const selectedModel = modelMap[model] || "openai/gpt-oss-20b";
-
-        // ── Batch strategy ────────────────────────────────────────────────
-        const BATCH_SIZE = 5;
-        const batches: number[] = [];
-        let remaining = count;
-        while (remaining > 0) {
-            batches.push(Math.min(remaining, BATCH_SIZE));
-            remaining -= BATCH_SIZE;
-        }
 
         const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
 No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
 If asked to generate N questions, the array must have exactly N elements.`;
 
-        const buildPrompt = (batchCount: number, batchIndex: number) =>
-            `Generate ${batchCount} quiz questions about: "${topic}"
+        const userPrompt = `Generate ${totalTarget} quiz questions about: "${topic}"
 Difficulty: ${difficulty}
-${batches.length > 1 ? `(Batch ${batchIndex + 1}/${batches.length} - make questions different from other batches)` : ""}
 
 Output ONLY this JSON array structure (no other text):
 [
@@ -79,38 +69,44 @@ Rules:
 - Exactly 1 answer with isCorrect: true
 - Colors must be exactly: "red","blue","green","yellow" in order
 - Questions and answers must be in Thai language
-- Return EXACTLY ${batchCount} questions
+- Return EXACTLY ${totalTarget} questions
+- Each question must be UNIQUE and different from all others
 - Output raw JSON array ONLY - no markdown, no backticks, no explanation`;
 
-        // Fire all batches concurrently
-        const batchResults = await Promise.all(
-            batches.map((batchCount, batchIndex) =>
-                openai.chat.completions.create({
-                    model: selectedModel,
-                    messages: [
-                        { role: "system", content: SYSTEM_PROMPT },
-                        { role: "user", content: buildPrompt(batchCount, batchIndex) },
-                    ],
-                    temperature: 0.7,
-                    top_p: 0.9,
-                    max_tokens: 2048,
-                })
-            )
-        );
+        // Single API call
+        const completion = await openai.chat.completions.create({
+            model: selectedModel,
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: userPrompt },
+            ],
+            temperature: 0.2,
+            top_p: 0.7,
+            max_tokens: 8192,
+        });
 
         // Try to parse JSON from response
         let questions: GeneratedQuestion[] = [];
 
         try {
-            for (const [i, completion] of batchResults.entries()) {
-                const responseText = completion.choices[0]?.message?.content || "";
-                const finishReason = completion.choices[0]?.finish_reason;
-                console.log(`Batch ${i + 1}/${batches.length} — length: ${responseText.length}, finish: ${finishReason}`);
-                console.log(`Raw response preview: ${responseText.slice(0, 300)}`);
+            let responseText = completion.choices[0]?.message?.content || "";
+            const finishReason = completion.choices[0]?.finish_reason;
+            console.log(`Response — length: ${responseText.length}, finish: ${finishReason}`);
 
-                const parsed = parseAIResponse(responseText);
-                questions.push(...parsed);
-            }
+            // Strip Thinking/Reasoning tags (e.g. <think>...</think>)
+            responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, "");
+            responseText = responseText.replace(/thinking:[\s\S]*?(?=({|\[))/gi, "");
+
+            // Repair common LLM hallucinations in JSON
+            responseText = responseText
+                .replace(/"order"\s*:\s*:\s*(\d+)/g, '"order": $1')
+                .replace(/"order"\s*:\s*(\d+)\s+(\d+)/g, '"order": $1')
+                .replace(/"orde\s*er"\s*:/g, '"order":')
+                .replace(/"isCorre\s*ct"\s*:/g, '"isCorrect":')
+                .replace(/"answerTe\s*xt"\s*:/g, '"answerText":');
+
+            const parsed = parseAIResponse(responseText);
+            questions.push(...parsed);
 
             // Validate and fix the questions
             questions = questions.map((q, index) => {
@@ -248,15 +244,30 @@ function parseAIResponse(raw: string): GeneratedQuestion[] {
         // ── Step 4: recovery from truncated response ─────────────────────────
         const arrayText = text.slice(startIdx);
         const noTrailing = cleanTrailing(arrayText);
+        
+        // Find the last completely closed object '}'
         const lastBrace = noTrailing.lastIndexOf("}");
         if (lastBrace !== -1) {
-            const recovered = noTrailing.slice(0, lastBrace + 1).replace(/,\s*$/, "") + "]";
-            result = tryParse(recovered);
-            if (result && result.length > 0) {
-                console.warn(`Truncation recovery: got ${result.length} complete question(s).`);
-                return result;
-            }
+            try {
+                const recovered = noTrailing.slice(0, lastBrace + 1);
+                // Remove potential trailing comma before closing array
+                const fixed = recovered.replace(/,\s*$/, "") + "]";
+                result = tryParse(fixed);
+                if (result) return result;
+            } catch { /* ignore */ }
         }
+
+        // ── Step 5: final attempt - just try to find ANY valid json objects ───
+        const objects: any[] = [];
+        const regex = /{[^{}]*}/g; // Very simple object matcher
+        let m;
+        while ((m = regex.exec(text)) !== null) {
+            try {
+                const obj = JSON.parse(m[0]);
+                if (obj.questionText) objects.push(obj);
+            } catch { /* ignore */ }
+        }
+        if (objects.length > 0) return objects;
     }
 
     throw new Error("Could not parse JSON even after all recovery attempts");

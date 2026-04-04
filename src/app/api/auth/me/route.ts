@@ -52,14 +52,33 @@ export async function GET() {
             success: true,
             data: user,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Get me error:", error);
+
+        // JWT-specific errors → real 401
+        const isAuthError =
+            error?.code === "ERR_JWT_EXPIRED" ||
+            error?.code === "ERR_JWS_INVALID" ||
+            error?.code === "ERR_JWT_CLAIM_VALIDATION_FAILED" ||
+            error?.code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED";
+
+        if (isAuthError) {
+            return NextResponse.json<ApiResponse>(
+                {
+                    success: false,
+                    error: "Token ไม่ถูกต้องหรือหมดอายุ",
+                },
+                { status: 401 }
+            );
+        }
+
+        // DB timeout or network error → 500 (not auth failure)
         return NextResponse.json<ApiResponse>(
             {
                 success: false,
-                error: "Token ไม่ถูกต้องหรือหมดอายุ",
+                error: "เซิร์ฟเวอร์มีปัญหาชั่วคราว กรุณาลองใหม่",
             },
-            { status: 401 }
+            { status: 500 }
         );
     }
 }

@@ -257,7 +257,18 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         };
     }, [isAutoPlay, gameData?.status]); // Add specific dependencies if needed
 
-    // Auto Skip: handled below after handleShowAnswer is declared
+    // Poll for updates in LOBBY (fallback for missed socket events)
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (gameData?.status === "LOBBY") {
+            interval = setInterval(() => {
+                fetchGame();
+            }, 3000);
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [gameData?.status, pin]);
 
 
     // Handle Game State Changes for Audio

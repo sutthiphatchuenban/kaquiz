@@ -11,8 +11,8 @@
   /* Base Colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-prompt);
+  --font-mono: var(--font-inter);
 
   /* Component Colors */
   --color-card: var(--card);
@@ -523,6 +523,17 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  /* Shimmer animation for indeterminate progress */
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(300%);
     }
   }
 }
