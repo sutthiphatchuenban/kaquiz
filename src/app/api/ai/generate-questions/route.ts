@@ -1,73 +1,113 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { resolveModelChain, getClient, type ModelCandidate } from "@/lib/ai/model-resolver";
+import { dedupeQuestions } from "@/lib/ai/question-dedupe";
+
+const MAX_QUESTIONS_PER_BATCH = 10;
+const MAX_PARSE_RETRIES = 2;
+
+/** Total time the request may spend working through the model chain. */
+const GENERATION_BUDGET_MS = 50_000;
+
+/** The fallback chain may try several models, so allow a longer handler. */
+export const maxDuration = 60;
 
 
-
-interface GeneratedQuestion {
-    questionText: string;
-    answers: {
-        answerText: string;
-        isCorrect: boolean;
-        color: "red" | "blue" | "green" | "yellow";
-        order: number;
-    }[];
-    timeLimit: number;
-    points: number;
+class EmptyAIResponseError extends Error {
+    constructor(message = "AI returned empty content") {
+        super(message);
+        this.name = "EmptyAIResponseError";
+    }
 }
 
-export async function POST(req: NextRequest) {
-    try {
-        const openai = new OpenAI({
-            apiKey: process.env.NVIDIA_API_KEY || "",
-            baseURL: "https://integrate.api.nvidia.com/v1",
-        });
+class TruncatedAIResponseError extends Error {
+    constructor(message = "AI response was truncated") {
+        super(message);
+        this.name = "TruncatedAIResponseError";
+    }
+}
 
-        const openrouter = new OpenAI({
-            apiKey: process.env.OPENROUTER_API_KEY || "",
-            baseURL: "https://openrouter.ai/api/v1",
-            defaultHeaders: {
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "Kaquiz",
-            }
-        });
 
-        const body = await req.json();
-        const { topic, count, difficulty = "medium", model = "gpt-oss-20b", existingQuestions = [] } = body;
+function sanitizeAIResponse(raw: string): string {
+    let responseText = raw;
 
-        if (!topic || !count) {
-            return NextResponse.json(
-                { success: false, error: "กรุณากรอกหัวข้อและจำนวนคำถาม" },
-                { status: 400 }
-            );
+    // Strip Thinking/Reasoning tags (e.g. <think>...</think>)
+    responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, "");
+    responseText = responseText.replace(/thinking:[\s\S]*?(?=({|\[))/gi, "");
+
+    // Repair common LLM hallucinations in JSON
+    responseText = responseText
+        .replace(/"order"\s*:\s*:\s*(\d+)/g, '"order": $1')
+        .replace(/"order"\s*:\s*(\d+)\s+(\d+)/g, '"order": $1')
+        .replace(/"orde\s*er"\s*:/g, '"order":')
+        .replace(/"isCorre\s*ct"\s*:/g, '"isCorrect":')
+        .replace(/"answerTe\s*xt"\s*:/g, '"answerText":');
+
+    return responseText.trim();
+}
+
+function normalizeQuestions(questions: GeneratedQuestion[]): GeneratedQuestion[] {
+    return questions.map((q, index) => {
+        const answers = [...(q.answers || [])];
+        for (let i = answers.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [answers[i], answers[j]] = [answers[j], answers[i]];
         }
 
-        const totalTarget = Math.min(Math.max(parseInt(count.toString() || "5"), 1), 50);
+        const normalizedAnswers = answers.slice(0, 4).map((a, i) => ({
+            answerText: a.answerText || `ตัวเลือก ${i + 1}`,
+            isCorrect: a.isCorrect === true,
+            color: (["red", "blue", "green", "yellow"] as const)[i],
+            order: i,
+        }));
 
-        // Map model selection
-        const modelMap: Record<string, { id: string; provider: "nvidia" | "openrouter" }> = {
-            "mistral-small-4": { id: "mistralai/mistral-small-4-119b-2603", provider: "nvidia" },
-            "gpt-oss-120b": { id: "openai/gpt-oss-120b", provider: "nvidia" },
-            "gpt-oss-20b": { id: "openai/gpt-oss-20b", provider: "nvidia" },
-            "gemma-3n": { id: "google/gemma-3n-e4b-it", provider: "nvidia" },
-            "qwen-3-next": { id: "qwen/qwen3-next-80b-a3b-instruct:free", provider: "openrouter" },
-            "minimax-m2-5": { id: "minimax/minimax-m2.5:free", provider: "openrouter" },
-            "nemotron-3-super": { id: "nvidia/nemotron-3-super-120b-a12b:free", provider: "openrouter" },
+        if (normalizedAnswers.length > 0 && !normalizedAnswers.some((a) => a.isCorrect)) {
+            normalizedAnswers[0].isCorrect = true;
+        }
+
+        return {
+            questionText: q.questionText || `คำถามที่ ${index + 1}`,
+            answers: normalizedAnswers,
+            timeLimit: q.timeLimit || 20,
+            points: q.points || 1000,
         };
+    });
+}
 
-        const selectedModelConfig = modelMap[model] || modelMap["gpt-oss-20b"];
-        const selectedModel = selectedModelConfig.id;
-        const client = selectedModelConfig.provider === "openrouter" ? openrouter : openai;
 
-        const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
+
+async function generateBatch({
+    client,
+    model,
+    topic,
+    difficulty,
+    batchCount,
+    existingQuestions,
+    batchNumber,
+}: {
+    client: OpenAI;
+    model: string;
+    topic: string;
+    difficulty: string;
+    batchCount: number;
+    existingQuestions: string[];
+    batchNumber: number;
+}): Promise<GeneratedQuestion[]> {
+    const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
 No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
 If asked to generate N questions, the array must have exactly N elements.`;
 
-        const existingList = (existingQuestions as string[]) || [];
-        const avoidSection = existingList.length > 0 
-            ? `\n\nIMPORTANT - DO NOT repeat these questions that were already generated:\n${existingList.slice(-20).map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nAsk about different aspects, events, or facts.`
+    const existingList = existingQuestions || [];
+    const avoidSection = existingList.length > 0
+        ? `\n\nIMPORTANT - These questions already exist. DO NOT repeat them, and DO NOT ask the same thing with different wording:\n${existingList.slice(-30).map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nRewording an existing question, reordering its choices, or asking about the same fact from the same angle still counts as a repeat. Every new question must test a DIFFERENT fact.`
+        : "";
+
+    for (let attempt = 0; attempt <= MAX_PARSE_RETRIES; attempt++) {
+        const stricterInstruction = attempt > 0
+            ? `\n\nCRITICAL: Return minified JSON only. Do not include any explanation, prefix, suffix, thinking text, or markdown. If you cannot comply, return [] only.`
             : "";
 
-        const userPrompt = `Generate ${totalTarget} quiz questions about: "${topic}"
+        const userPrompt = `Generate ${batchCount} quiz questions about: "${topic}"
 Difficulty: ${difficulty}${avoidSection}
 
 Output ONLY this JSON array structure (no other text):
@@ -90,88 +130,233 @@ Rules:
 - Exactly 1 answer with isCorrect: true
 - Colors must be exactly: "red","blue","green","yellow" in order
 - Questions and answers must be in Thai language
-- Return EXACTLY ${totalTarget} questions
-- Each question must be UNIQUE, asking about completely different facts.
-- Output raw JSON array ONLY - no markdown, no explanation`;
+- Return EXACTLY ${batchCount} questions
+- Each question must be UNIQUE and test a completely different fact
+- Never reword an existing question, and never ask the same fact from another angle
+- Output raw JSON array ONLY - no markdown, no explanation${stricterInstruction}`;
 
-        // Single API call
         const completion = await client.chat.completions.create({
-            model: selectedModel,
+            model,
             messages: [
                 { role: "system", content: SYSTEM_PROMPT },
                 { role: "user", content: userPrompt },
             ],
-            temperature: 0.6,
-            max_tokens: 8192,
+            temperature: attempt > 0 ? 0.2 : 0.3,
+            max_tokens: 12000,
         });
 
-        // Try to parse JSON from response
-        let questions: GeneratedQuestion[] = [];
+        const rawContent = completion.choices[0]?.message?.content;
+        const responseText = sanitizeAIResponse(
+            Array.isArray(rawContent)
+                ? rawContent.map((part) => typeof part === "string" ? part : ("text" in part ? part.text ?? "" : "")).join("")
+                : rawContent || ""
+        );
+        const finishReason = completion.choices[0]?.finish_reason;
+
+        console.log(
+            `[AI batch ${batchNumber} attempt ${attempt + 1}] model=${model} count=${batchCount} length=${responseText.length} finish=${finishReason}`
+        );
+
+        if (!responseText) {
+            if (attempt === MAX_PARSE_RETRIES) {
+                throw new EmptyAIResponseError();
+            }
+            continue;
+        }
+
+        if (finishReason === "length" && !responseText.trim().endsWith("]")) {
+            if (attempt === MAX_PARSE_RETRIES) {
+                throw new TruncatedAIResponseError();
+            }
+            continue;
+        }
 
         try {
-            let responseText = completion.choices[0]?.message?.content || "";
-            const finishReason = completion.choices[0]?.finish_reason;
-            console.log(`Response — length: ${responseText.length}, finish: ${finishReason}`);
-
-            // Strip Thinking/Reasoning tags (e.g. <think>...</think>)
-            responseText = responseText.replace(/<think>[\s\S]*?<\/think>/gi, "");
-            responseText = responseText.replace(/thinking:[\s\S]*?(?=({|\[))/gi, "");
-
-            // Repair common LLM hallucinations in JSON
-            responseText = responseText
-                .replace(/"order"\s*:\s*:\s*(\d+)/g, '"order": $1')
-                .replace(/"order"\s*:\s*(\d+)\s+(\d+)/g, '"order": $1')
-                .replace(/"orde\s*er"\s*:/g, '"order":')
-                .replace(/"isCorre\s*ct"\s*:/g, '"isCorrect":')
-                .replace(/"answerTe\s*xt"\s*:/g, '"answerText":');
-
             const parsed = parseAIResponse(responseText);
-            questions.push(...parsed);
+            const normalized = normalizeQuestions(parsed);
 
-            // Validate and fix the questions
-            questions = questions.map((q, index) => {
-                // Shuffle answers to ensure correct answer isn't always first
-                const answers = [...(q.answers || [])];
-                for (let i = answers.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [answers[i], answers[j]] = [answers[j], answers[i]];
-                }
-
-                return {
-                    questionText: q.questionText || `คำถามที่ ${index + 1}`,
-                    answers: answers.slice(0, 4).map((a, i) => ({
-                        answerText: a.answerText || `ตัวเลือก ${i + 1}`,
-                        isCorrect: a.isCorrect === true,
-                        color: (["red", "blue", "green", "yellow"] as const)[i],
-                        order: i,
-                    })),
-                    timeLimit: q.timeLimit || 20,
-                    points: q.points || 1000,
-                };
-            });
-
-            // Ensure each question has exactly one correct answer
-            questions = questions.map(q => {
-                const hasCorrect = q.answers.some(a => a.isCorrect);
-                if (!hasCorrect && q.answers.length > 0) {
-                    q.answers[0].isCorrect = true;
-                }
-                return q;
-            });
-
-            if (questions.length === 0) {
+            if (normalized.length === 0) {
                 throw new Error("PARSE_FAILED: No valid questions parsed from AI response");
             }
 
+            return normalized;
         } catch (parseError) {
-            console.error("Failed to parse AI response:", parseError);
+            console.error(`[AI batch ${batchNumber} attempt ${attempt + 1}] Failed to parse AI response:`, parseError);
+            if (attempt === MAX_PARSE_RETRIES) {
+                throw parseError;
+            }
+        }
+    }
+
+    throw new Error("AI batch generation failed after retries");
+}
+
+
+
+interface GeneratedQuestion {
+    questionText: string;
+    answers: {
+        answerText: string;
+        isCorrect: boolean;
+        color: "red" | "blue" | "green" | "yellow";
+        order: number;
+    }[];
+    timeLimit: number;
+    points: number;
+}
+
+interface ModelFailure {
+    model: string;
+    reason: string;
+    status?: number;
+}
+
+/**
+ * Generates with one model until the target is reached, mixing in anything
+ * produced by earlier models so a fallback model does not repeat them.
+ */
+async function generateUpToTarget({
+    candidate,
+    topic,
+    difficulty,
+    totalTarget,
+    existingQuestions,
+    alreadyGenerated,
+}: {
+    candidate: ModelCandidate;
+    topic: string;
+    difficulty: string;
+    totalTarget: number;
+    existingQuestions: string[];
+    alreadyGenerated: GeneratedQuestion[];
+}): Promise<GeneratedQuestion[]> {
+    const client = getClient(candidate.provider);
+    const collected: GeneratedQuestion[] = [...alreadyGenerated];
+
+    // Bounds the loop in case a model keeps returning duplicates.
+    const maxBatches =
+        Math.ceil((totalTarget - alreadyGenerated.length) / MAX_QUESTIONS_PER_BATCH) + 3;
+
+    for (let batch = 0; batch < maxBatches && collected.length < totalTarget; batch++) {
+        const batchCount = Math.min(totalTarget - collected.length, MAX_QUESTIONS_PER_BATCH);
+
+        const batchQuestions = await generateBatch({
+            client,
+            model: candidate.id,
+            topic,
+            difficulty,
+            batchCount,
+            existingQuestions: [
+                ...existingQuestions,
+                ...collected.map((q) => q.questionText),
+            ],
+            batchNumber: batch + 1,
+        });
+
+        collected.push(...batchQuestions);
+
+        const uniqueQuestions = dedupeQuestions(collected);
+        collected.length = 0;
+        collected.push(...uniqueQuestions.slice(0, totalTarget));
+    }
+
+    return collected;
+}
+
+/**
+ * Explains why every model failed. When all failures were refused by the
+ * provider (bad key, no entitlement, or a catalog entry that is no longer
+ * served) the API keys are the problem, not the prompt or the topic.
+ */
+function describeFailure(failures: ModelFailure[]): string {
+    if (failures.length === 0) {
+        return "ไม่สามารถสร้างคำถามได้ — กรุณาลองใหม่อีกครั้ง";
+    }
+
+    // 404/410 mean the catalog advertised a model the provider will not serve.
+    const providerRejectStatuses = new Set([401, 402, 403, 404, 410]);
+    if (failures.every((f) => f.status !== undefined && providerRejectStatuses.has(f.status))) {
+        return "AI Provider ปฏิเสธการเชื่อมต่อทุกโมเดล (API Key ไม่ถูกต้อง/หมดสิทธิ์) — กรุณาตรวจสอบ OPENROUTER_API_KEY และ NVIDIA_API_KEY";
+    }
+
+    if (failures.every((f) => f.status === 429)) {
+        return "AI ทุกตัวถูกเรียกใช้งานหนักเกินไปในขณะนี้ — กรุณาลองใหม่อีกครั้งในอีกสักครู่";
+    }
+
+    return `สร้างคำถามไม่สำเร็จ — กรุณาลองใหม่อีกครั้ง (ลองแล้ว ${failures.length} โมเดล)`;
+}
+
+export async function POST(req: NextRequest) {
+    try {
+        const body = await req.json();
+        const { topic, count, difficulty = "medium", existingQuestions = [] } = body;
+
+        if (!topic || !count) {
+            return NextResponse.json(
+                { success: false, error: "กรุณากรอกหัวข้อและจำนวนคำถาม" },
+                { status: 400 }
+            );
+        }
+
+        const totalTarget = Math.min(Math.max(parseInt(count.toString() || "5"), 1), 50);
+
+        // No model is pinned — the chain is read live from the providers.
+        const chain = await resolveModelChain();
+
+        if (chain.length === 0) {
             return NextResponse.json(
                 {
                     success: false,
-                    error: "AI ตอบกลับไม่ถูกรูปแบบ — ลองเปลี่ยน Model แล้วสร้างใหม่อีกครั้ง",
-                    hint: "change_model",
+                    error: "ไม่พบ AI Model ที่พร้อมใช้งาน — กรุณาตรวจสอบ API Key ของ OpenRouter / NVIDIA",
                 },
-                { status: 500 }
+                { status: 503 }
+            );
+        }
+
+        const seedExistingQuestions = (existingQuestions as string[]) || [];
+        const deadline = Date.now() + GENERATION_BUDGET_MS;
+        const failures: ModelFailure[] = [];
+
+        let questions: GeneratedQuestion[] = [];
+        let usedCandidate: ModelCandidate | null = null;
+
+        for (const candidate of chain) {
+            if (questions.length >= totalTarget) break;
+
+            if (Date.now() >= deadline) {
+                failures.push({ model: candidate.id, reason: "generation budget exhausted" });
+                break;
+            }
+
+            try {
+                const generated = await generateUpToTarget({
+                    candidate,
+                    topic,
+                    difficulty,
+                    totalTarget,
+                    existingQuestions: seedExistingQuestions,
+                    alreadyGenerated: questions,
+                });
+
+                if (generated.length > questions.length) {
+                    questions = generated;
+                    usedCandidate = candidate;
+                }
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                console.error(`[AI] ${candidate.provider}:${candidate.id} failed — ${reason}`);
+                failures.push({
+                    model: candidate.id,
+                    reason,
+                    status: (error as { status?: number }).status,
+                });
+            }
+        }
+
+        if (questions.length === 0) {
+            return NextResponse.json(
+                { success: false, error: describeFailure(failures) },
+                { status: 502 }
             );
         }
 
@@ -181,19 +366,17 @@ Rules:
                 questions,
                 topic,
                 generatedCount: questions.length,
+                model: usedCandidate?.id,
+                provider: usedCandidate?.provider,
+                fallbacksUsed: failures.length,
             },
         });
     } catch (error) {
         console.error("AI Generation Error:", error);
-        const errMsg = error instanceof Error ? error.message : "";
-        const isRateLimit = errMsg.includes("429") || errMsg.includes("rate");
         return NextResponse.json(
             {
                 success: false,
-                error: isRateLimit
-                    ? "Model นี้ถูกใช้งานหนักเกินไป — ลองเปลี่ยนเป็น Model อื่น"
-                    : "เกิดข้อผิดพลาดในการสร้างคำถาม — ลองเปลี่ยน Model แล้วลองใหม่",
-                hint: "change_model",
+                error: "เกิดข้อผิดพลาดในการสร้างคำถาม — กรุณาลองใหม่อีกครั้ง",
             },
             { status: 500 }
         );
@@ -213,6 +396,10 @@ Rules:
  */
 function parseAIResponse(raw: string): GeneratedQuestion[] {
     let text = raw.trim();
+
+    if (!text) {
+        throw new EmptyAIResponseError();
+    }
 
     // ── Step 1: strip markdown code fences ──────────────────────────────────
     text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
@@ -278,13 +465,13 @@ function parseAIResponse(raw: string): GeneratedQuestion[] {
         }
 
         // ── Step 5: final attempt - just try to find ANY valid json objects ───
-        const objects: any[] = [];
+        const objects: GeneratedQuestion[] = [];
         const regex = /{[^{}]*}/g; // Very simple object matcher
         let m;
         while ((m = regex.exec(text)) !== null) {
             try {
-                const obj = JSON.parse(m[0]);
-                if (obj.questionText) objects.push(obj);
+                const obj = JSON.parse(m[0]) as Partial<GeneratedQuestion>;
+                if (obj.questionText) objects.push(obj as GeneratedQuestion);
             } catch { /* ignore */ }
         }
         if (objects.length > 0) return objects;
