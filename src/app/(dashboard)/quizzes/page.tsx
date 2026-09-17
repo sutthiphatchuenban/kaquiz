@@ -130,7 +130,7 @@ export default function QuizzesPage() {
             />
 
             {isLoading ? (
-                <div className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-7 sm:grid-cols-2 lg:grid-cols-3">
                     {[1, 2, 3].map((i) => (
                         <Skeleton key={i} className="h-72" />
                     ))}
@@ -148,11 +148,11 @@ export default function QuizzesPage() {
                     }
                 />
             ) : (
-                <div className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-7 sm:grid-cols-2 lg:grid-cols-3">
                     {quizzes.map((quiz, index) => (
                         <article
                             key={quiz.id}
-                            className="kq-card kq-card-hover flex flex-col"
+                            className="kq-card kq-card-hover flex min-w-0 flex-col"
                         >
                             <div
                                 className="kq-art relative grid h-32 place-items-center"
@@ -167,7 +167,7 @@ export default function QuizzesPage() {
                                 </span>
                             </div>
 
-                            <div className="flex flex-1 flex-col gap-3 p-5">
+                            <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
                                 <h2 className="truncate text-xl font-bold text-ink" title={quiz.title}>
                                     {quiz.title}
                                 </h2>
@@ -184,7 +184,7 @@ export default function QuizzesPage() {
                                     </span>
                                 </div>
 
-                                <div className="mt-1 flex flex-wrap gap-2 border-t-2 border-dashed border-line/30 pt-4">
+                                <div className="mt-1 grid grid-cols-2 gap-2 border-t-2 border-dashed border-line/30 pt-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                                     <Link
                                         href={`/quizzes/${quiz.id}/edit`}
                                         className="kq-btn kq-btn-sm kq-btn-paper flex-1"
@@ -202,7 +202,7 @@ export default function QuizzesPage() {
                                     <button
                                         type="button"
                                         onClick={() => setDeleteId(quiz.id)}
-                                        className="kq-btn kq-btn-sm kq-btn-danger"
+                                        className="kq-btn kq-btn-sm kq-btn-danger col-span-2 sm:col-span-1"
                                         aria-label={`ลบ Quiz ${quiz.title}`}
                                     >
                                         <Trash2 className="size-4" />

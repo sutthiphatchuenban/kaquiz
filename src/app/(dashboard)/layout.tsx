@@ -16,8 +16,8 @@ export default function DashboardLayout({
     return (
         <div className="flex min-h-dvh flex-col">
             <AppHeader />
-            <main className="flex-1 bg-[var(--cream)]">
-                <div className="kq-shell-wide py-8">{children}</div>
+            <main className="min-w-0 flex-1 overflow-x-clip bg-[var(--cream)]">
+                <div className="kq-shell-wide min-w-0 py-8">{children}</div>
             </main>
             <SiteFooter />
         </div>
