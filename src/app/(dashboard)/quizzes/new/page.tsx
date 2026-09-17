@@ -134,9 +134,24 @@ export default function NewQuizPage() {
             }>(res);
 
             if (data.success && data.data?.questions?.length) {
+                const generatedCount = data.data.questions.length;
+                const topic = aiTopic.trim();
+                const difficultyLabels: Record<string, string> = {
+                    easy: "ง่าย",
+                    medium: "ปานกลาง",
+                    hard: "ยาก",
+                };
+                const difficultyLabel = difficultyLabels[aiDifficulty] || aiDifficulty;
+
                 setGeneratedQuestions(data.data.questions);
                 setShowPreview(true);
-                toast.success(`สร้างคำถามสำเร็จ ${data.data.questions.length} ข้อ!`, {
+                // Fill metadata for the user, but preserve anything they entered.
+                setTitle((current) => current.trim() || `แบบทดสอบ ${topic} ${generatedCount} ข้อ`);
+                setDescription(
+                    (current) => current.trim() ||
+                        `คำถามเกี่ยวกับ ${topic} จำนวน ${generatedCount} ข้อ ระดับ${difficultyLabel} แบบปรนัย 4 ตัวเลือก`
+                );
+                toast.success(`สร้างคำถามสำเร็จ ${generatedCount} ข้อ!`, {
                     description: data.data.model
                         ? `ใช้โมเดล ${data.data.model} — ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ`
                         : "ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ",

@@ -38,8 +38,12 @@ We have created a standalone `socket-server.js` file in your project root for th
 | `JWT_SECRET` | `...` | Generate a random secret string (e.g., `openssl rand -base64 32`). |
 | `UPLOADTHING_TOKEN` | `...` | Copy from your local `.env`. |
 | `NEXT_PUBLIC_SOCKET_URL` | `https://kaquiz-socket.onrender.com` | **Crucial**: The URL from Part 1 (no trailing slash). |
+| `OPENROUTER_API_KEY` | `sk-or-v1-...` | Required for AI quiz generation through OpenRouter free models. |
+| `NVIDIA_API_KEY` | `nvapi-...` | Recommended fallback when OpenRouter free capacity is busy. |
+| `AI_GENERATION_BUDGET_MS` | `240000` | Optional AI request budget. Keep this below the function duration. |
 
-5. Click **Deploy**.
+5. In **Settings → Functions**, set the function duration to 300 seconds. The AI route reserves 30 seconds for cold starts, model discovery, and response serialization.
+6. Click **Deploy** (or redeploy after changing environment variables).
 
 ---
 

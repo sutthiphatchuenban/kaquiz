@@ -29,7 +29,7 @@ interface ProviderConfig {
 const CATALOG_TTL_MS = 10 * 60 * 1000;
 
 /** Models to try per provider before giving up on that provider. */
-const MAX_CANDIDATES_PER_PROVIDER = 5;
+const MAX_CANDIDATES_PER_PROVIDER = 4;
 
 /** Upstream request timeout — keeps a single bad model from stalling the chain. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -39,7 +39,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * timeout than a completion — a slow `/v1/models` must not eat the budget
  * the generation itself needs.
  */
-const CATALOG_TIMEOUT_MS = 8_000;
+const CATALOG_TIMEOUT_MS = 3_000;
 
 /**
  * Substrings marking a catalog entry as something other than a chat model
@@ -169,23 +169,34 @@ function outputsText(entry: CatalogEntry): boolean {
  */
 function rankOpenRouterModels(entries: CatalogEntry[]): CatalogEntry[] {
     const score = (entry: CatalogEntry) => {
+        const id = entry.id?.toLowerCase() || "";
         const params = entry.supported_parameters || [];
-        if (params.includes("structured_outputs")) return 2;
-        if (params.includes("response_format")) return 1;
-        return 0;
+        let value = 0;
+
+        if (params.includes("structured_outputs")) value += 20;
+        else if (params.includes("response_format")) value += 10;
+        if (/instruct|chat/.test(id)) value += 8;
+        if (/mini|small|flash|8b|12b|20b/.test(id)) value += 5;
+
+        // Preview/reasoning and very large models are poor fits for a short
+        // serverless request: free capacity is often slow and hidden reasoning
+        // can consume the entire output allowance before JSON is emitted.
+        if (/preview|reason|thinking|note/.test(id)) value -= 30;
+        if (/70b|120b|405b/.test(id)) value -= 8;
+        return value;
     };
 
     return [...entries].sort((a, b) => {
         const byScore = score(b) - score(a);
         if (byScore !== 0) return byScore;
-        return (b.context_length || 0) - (a.context_length || 0);
+        return (b.created || 0) - (a.created || 0);
     });
 }
 
 async function listOpenRouterCandidates(config: ProviderConfig): Promise<ModelCandidate[]> {
     const catalog = await fetchCatalog(config);
 
-    return rankOpenRouterModels(
+    const candidates = rankOpenRouterModels(
         catalog.filter(
             (entry) =>
                 !!entry.id &&
@@ -194,8 +205,15 @@ async function listOpenRouterCandidates(config: ProviderConfig): Promise<ModelCa
                 !isNonChatModel(entry.id)
         )
     )
-        .slice(0, MAX_CANDIDATES_PER_PROVIDER)
+        .slice(0, MAX_CANDIDATES_PER_PROVIDER - 1)
         .map((entry) => ({ provider: "openrouter" as const, id: entry.id! }));
+
+    // OpenRouter's free router selects a currently available free model. It is
+    // more resilient than pinning whichever preview model tops today's catalog.
+    return [
+        { provider: "openrouter" as const, id: "openrouter/free" },
+        ...candidates.filter((candidate) => candidate.id !== "openrouter/free"),
+    ];
 }
 
 async function listNvidiaCandidates(config: ProviderConfig): Promise<ModelCandidate[]> {

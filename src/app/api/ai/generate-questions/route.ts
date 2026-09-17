@@ -4,10 +4,13 @@ import { resolveModelChain, getClient, type ModelCandidate } from "@/lib/ai/mode
 import { dedupeQuestions } from "@/lib/ai/question-dedupe";
 
 const MAX_QUESTIONS_PER_BATCH = 10;
-const MAX_PARSE_RETRIES = 2;
 
-/** Hard cap for a single model call so one slow model cannot stall the chain. */
-const PER_CALL_TIMEOUT_MS = 25_000;
+/**
+ * Leave enough budget to try a second provider on Hobby. Free models can spend
+ * their whole output allowance on hidden reasoning, so a long per-call timeout
+ * makes fallback effectively useless.
+ */
+const PER_CALL_TIMEOUT_MS = 35_000;
 
 /** Don't start a model call we cannot finish, plus room to build the response. */
 const MIN_CALL_MS = 6_000;
@@ -17,12 +20,13 @@ const MIN_CALL_MS = 6_000;
  * Vercel → Settings → Functions, so raising that project default alone does
  * nothing — change this line too.
  *
- * 60s is the Hobby plan ceiling; Pro and Enterprise allow up to 30 minutes.
+ * Keep this in sync with Vercel → Settings → Functions. Vercel's current
+ * Hobby limit is 300 seconds when Fluid Compute is enabled.
  */
-export const maxDuration = 60;
+export const maxDuration = 300;
 
-/** Keep this many seconds of `maxDuration` free for cold starts + serialisation. */
-const HEADROOM_S = 15;
+/** Keep time free for cold starts, catalog discovery and serialisation. */
+const HEADROOM_S = 30;
 
 /**
  * Total time the request may spend working through the model chain.
@@ -38,7 +42,7 @@ const GENERATION_BUDGET_MS = (() => {
     const hardCap = (maxDuration - HEADROOM_S) * 1000;
     const configured = Number(process.env.AI_GENERATION_BUDGET_MS);
     if (!Number.isFinite(configured) || configured <= 0) {
-        return Math.min(45_000, hardCap);
+        return Math.min(240_000, hardCap);
     }
     return Math.min(Math.max(configured, 5_000), hardCap);
 })();
@@ -116,7 +120,6 @@ async function generateBatch({
     existingQuestions,
     batchNumber,
     timeoutMs,
-    deadline,
 }: {
     client: OpenAI;
     model: string;
@@ -126,7 +129,6 @@ async function generateBatch({
     existingQuestions: string[];
     batchNumber: number;
     timeoutMs: number;
-    deadline: number;
 }): Promise<GeneratedQuestion[]> {
     const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
 No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
@@ -137,17 +139,9 @@ If asked to generate N questions, the array must have exactly N elements.`;
         ? `\n\nIMPORTANT - These questions already exist. DO NOT repeat them, and DO NOT ask the same thing with different wording:\n${existingList.slice(-30).map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nRewording an existing question, reordering its choices, or asking about the same fact from the same angle still counts as a repeat. Every new question must test a DIFFERENT fact.`
         : "";
 
-    for (let attempt = 0; attempt <= MAX_PARSE_RETRIES; attempt++) {
-        // Out of time: failing fast beats having the platform kill the request.
-        if (Date.now() + 1_000 >= deadline) {
-            throw new Error("Generation deadline reached before retrying");
-        }
-
-        const stricterInstruction = attempt > 0
-            ? `\n\nCRITICAL: Return minified JSON only. Do not include any explanation, prefix, suffix, thinking text, or markdown. If you cannot comply, return [] only.`
-            : "";
-
-        const userPrompt = `Generate ${batchCount} quiz questions about: "${topic}"
+    // A malformed/empty response is a model failure. Trying another model is
+    // both faster and more useful than asking the same free model again.
+    const userPrompt = `Generate ${batchCount} quiz questions about: "${topic}"
 Difficulty: ${difficulty}${avoidSection}
 
 Output ONLY this JSON array structure (no other text):
@@ -173,21 +167,29 @@ Rules:
 - Return EXACTLY ${batchCount} questions
 - Each question must be UNIQUE and test a completely different fact
 - Never reword an existing question, and never ask the same fact from another angle
-- Output raw JSON array ONLY - no markdown, no explanation${stricterInstruction}`;
+- Output raw JSON array ONLY - no markdown, no explanation`;
 
-        const completion = await client.chat.completions.create(
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
+    let completion;
+    try {
+        completion = await client.chat.completions.create(
             {
                 model,
                 messages: [
                     { role: "system", content: SYSTEM_PROMPT },
                     { role: "user", content: userPrompt },
                 ],
-                temperature: attempt > 0 ? 0.2 : 0.3,
-                max_tokens: 12000,
+                temperature: 0.3,
+                // 10 short Thai questions fit comfortably. A huge allowance is
+                // harmful with reasoning models because they may never emit JSON.
+                max_tokens: Math.min(6_000, Math.max(1_800, batchCount * 550)),
             },
-            // Never let one call outlive what is left of the request budget.
-            { timeout: timeoutMs }
+            { timeout: timeoutMs, signal: controller.signal }
         );
+    } finally {
+        clearTimeout(abortTimer);
+    }
 
         const rawContent = completion.choices[0]?.message?.content;
         const responseText = sanitizeAIResponse(
@@ -197,42 +199,31 @@ Rules:
         );
         const finishReason = completion.choices[0]?.finish_reason;
 
-        console.log(
-            `[AI batch ${batchNumber} attempt ${attempt + 1}] model=${model} count=${batchCount} length=${responseText.length} finish=${finishReason}`
-        );
+    console.log(
+        `[AI batch ${batchNumber}] model=${model} count=${batchCount} length=${responseText.length} finish=${finishReason}`
+    );
 
-        if (!responseText) {
-            if (attempt === MAX_PARSE_RETRIES) {
-                throw new EmptyAIResponseError();
-            }
-            continue;
-        }
-
-        if (finishReason === "length" && !responseText.trim().endsWith("]")) {
-            if (attempt === MAX_PARSE_RETRIES) {
-                throw new TruncatedAIResponseError();
-            }
-            continue;
-        }
-
-        try {
-            const parsed = parseAIResponse(responseText);
-            const normalized = normalizeQuestions(parsed);
-
-            if (normalized.length === 0) {
-                throw new Error("PARSE_FAILED: No valid questions parsed from AI response");
-            }
-
-            return normalized;
-        } catch (parseError) {
-            console.error(`[AI batch ${batchNumber} attempt ${attempt + 1}] Failed to parse AI response:`, parseError);
-            if (attempt === MAX_PARSE_RETRIES) {
-                throw parseError;
-            }
-        }
+    if (!responseText) {
+        throw new EmptyAIResponseError();
     }
 
-    throw new Error("AI batch generation failed after retries");
+    if (finishReason === "length" && !responseText.trim().endsWith("]")) {
+        throw new TruncatedAIResponseError();
+    }
+
+    try {
+        const parsed = parseAIResponse(responseText);
+        const normalized = normalizeQuestions(parsed);
+
+        if (normalized.length === 0) {
+            throw new Error("PARSE_FAILED: No valid questions parsed from AI response");
+        }
+
+        return normalized;
+    } catch (parseError) {
+        console.error(`[AI batch ${batchNumber}] Failed to parse AI response:`, parseError);
+        throw parseError;
+    }
 }
 
 
@@ -303,7 +294,6 @@ async function generateUpToTarget({
                 ],
                 batchNumber: batch + 1,
                 timeoutMs: Math.min(remaining, PER_CALL_TIMEOUT_MS),
-                deadline,
             });
         } catch (error) {
             // A slow extra batch must not throw away questions this model

@@ -494,12 +494,13 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                 }}
             />
 
-            {/* ── Audio controls ─────────────────────────────────────────── */}
-            <div className="fixed bottom-5 left-5 z-50 flex items-center gap-2 border-[3px] border-line bg-[var(--paper)] p-2 shadow-hard">
-                <span className="kq-pixel hidden px-1 text-[8px] text-[#211543] sm:block">
-                    AUDIO
-                </span>
-                <button
+            {/* ── Audio controls — kept in normal flow to avoid covering game UI ── */}
+            <div className="kq-shell-wide relative z-20 flex justify-end pt-4">
+                <div className="flex items-center gap-2 border-[3px] border-line bg-[var(--paper)] p-2 shadow-hard">
+                    <span className="kq-pixel hidden px-1 text-[8px] text-[#211543] sm:block">
+                        AUDIO
+                    </span>
+                    <button
                     type="button"
                     onClick={() => setIsAutoPlay(!isAutoPlay)}
                     aria-label={isAutoPlay ? "ปิดโหมดเล่นอัตโนมัติ" : "เปิดโหมดเล่นอัตโนมัติ"}
@@ -519,16 +520,17 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                 >
                     {isMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
                 </button>
-                <button
-                    type="button"
-                    onClick={toggleMusic}
-                    aria-label={isMusicOn ? "ปิดเพลงประกอบ" : "เปิดเพลงประกอบ"}
-                    aria-pressed={isMusicOn}
-                    title={isMusicOn ? "ปิดเพลงประกอบ" : "เปิดเพลงประกอบ"}
-                    className={`kq-btn kq-btn-sm ${isMusicOn ? "kq-btn-cyan" : "kq-btn-paper"}`}
-                >
-                    <Music className="size-4" />
-                </button>
+                    <button
+                        type="button"
+                        onClick={toggleMusic}
+                        aria-label={isMusicOn ? "ปิดเพลงประกอบ" : "เปิดเพลงประกอบ"}
+                        aria-pressed={isMusicOn}
+                        title={isMusicOn ? "ปิดเพลงประกอบ" : "เปิดเพลงประกอบ"}
+                        className={`kq-btn kq-btn-sm ${isMusicOn ? "kq-btn-cyan" : "kq-btn-paper"}`}
+                    >
+                        <Music className="size-4" />
+                    </button>
+                </div>
             </div>
 
             {/* ════════════════════ LOBBY ════════════════════ */}
