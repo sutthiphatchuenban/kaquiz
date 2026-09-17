@@ -7,11 +7,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginInput } from "@/lib/validations/auth";
 import { useAuthStore } from "@/stores/auth-store";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Sparkles, LogIn } from "lucide-react";
+import { ArcadeSprite } from "@/components/arcade-sprite";
+import { Loader2, LogIn } from "lucide-react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -41,71 +38,99 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center gradient-kahoot p-4">
-            <Card className="w-full max-w-md border-none shadow-2xl">
-                <CardHeader className="text-center space-y-4">
-                    <div className="flex justify-center">
-                        <img src="/favicon.ico" alt="KaQuiz" className="w-16 h-16 rounded-2xl object-contain" />
-                    </div>
-                    <CardTitle className="text-2xl font-bold">ยินดีต้อนรับกลับมา!</CardTitle>
-                    <CardDescription>เข้าสู่ระบบเพื่อสร้างและเล่น Quiz</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="email">อีเมล</Label>
-                            <Input
+        <div className="relative w-full">
+            <span className="kq-sticker absolute -top-3 left-4 z-10 rotate-[-6deg] px-2.5 py-1.5">
+                PLAYER 1
+                <br />
+                READY!
+            </span>
+
+            <div className="kq-card">
+                {/* slim arcade title bar */}
+                <div className="kq-art flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="grid size-11 shrink-0 rotate-[4deg] place-items-center border-[3px] border-[#211543] bg-[var(--paper)] shadow-[2px_2px_0_#211543]">
+                        <ArcadeSprite
+                            kind="bot"
+                            className="size-7"
+                            title="หุ่นยนต์พิกเซล KaQuiz"
+                        />
+                    </span>
+                    <span className="kq-badge kq-badge-cyan">INSERT COIN</span>
+                </div>
+
+                <div className="p-5 sm:p-6">
+                    <p className="kq-overline">01 / SIGN IN</p>
+                    <h1 className="kq-title mt-1.5 text-[1.6rem]">ยินดีต้อนรับกลับมา!</h1>
+
+                    <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-3.5">
+                        <div>
+                            <label htmlFor="email" className="kq-label">
+                                อีเมล
+                            </label>
+                            <input
                                 id="email"
                                 type="email"
                                 placeholder="name@example.com"
+                                autoComplete="email"
                                 {...register("email")}
                                 disabled={isLoading}
-                                className="h-12"
+                                className="kq-input"
                             />
                             {errors.email && (
-                                <p className="text-sm text-destructive">{errors.email.message}</p>
+                                <p className="kq-error">{errors.email.message}</p>
                             )}
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="password">รหัสผ่าน</Label>
-                            <Input
+
+                        <div>
+                            <label htmlFor="password" className="kq-label">
+                                รหัสผ่าน
+                            </label>
+                            <input
                                 id="password"
                                 type="password"
                                 placeholder="••••••••"
+                                autoComplete="current-password"
                                 {...register("password")}
                                 disabled={isLoading}
-                                className="h-12"
+                                className="kq-input"
                             />
                             {errors.password && (
-                                <p className="text-sm text-destructive">{errors.password.message}</p>
+                                <p className="kq-error">{errors.password.message}</p>
                             )}
                         </div>
-                        <Button
+
+                        <button
                             type="submit"
-                            className="w-full h-12 text-base font-semibold"
                             disabled={isLoading}
+                            className="kq-btn kq-btn-yellow kq-btn-block mt-1"
                         >
                             {isLoading ? (
                                 <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    <Loader2 className="size-5 animate-spin" />
                                     กำลังเข้าสู่ระบบ...
                                 </>
                             ) : (
                                 <>
-                                    <LogIn className="mr-2 h-4 w-4" />
+                                    <LogIn className="size-5" />
                                     เข้าสู่ระบบ
                                 </>
                             )}
-                        </Button>
+                        </button>
                     </form>
-                    <div className="mt-6 text-center text-sm text-muted-foreground">
+
+                    <hr className="kq-divider my-4" />
+
+                    <p className="text-center text-sm font-semibold text-muted-foreground">
                         ยังไม่มีบัญชี?{" "}
-                        <Link href="/register" className="text-primary font-medium hover:underline">
+                        <Link
+                            href="/register"
+                            className="font-bold text-[#6234dc] hover:underline dark:text-[var(--sunny)]"
+                        >
                             ลงทะเบียน
                         </Link>
-                    </div>
-                </CardContent>
-            </Card>
+                    </p>
+                </div>
+            </div>
         </div>
     );
 }

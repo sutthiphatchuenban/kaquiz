@@ -4,16 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth-store";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -22,17 +13,17 @@ import {
     AlertDialogDescription,
     AlertDialogFooter,
     AlertDialogHeader,
+    AlertDialogMedia,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PageHeading } from "@/components/page-heading";
+import { EmptyState } from "@/components/empty-state";
 import {
-    Sparkles,
-    Plus,
-    MoreVertical,
-    Play,
     Edit,
-    Trash2,
     FileQuestion,
-    ArrowLeft
+    Play,
+    Plus,
+    Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,6 +39,8 @@ interface Quiz {
         gameSessions: number;
     };
 }
+
+const ART_TINTS = ["var(--grape)", "var(--arcade)", "var(--candy)"];
 
 export default function QuizzesPage() {
     const router = useRouter();
@@ -110,151 +103,134 @@ export default function QuizzesPage() {
 
     if (authLoading) {
         return (
-            <div className="min-h-screen bg-background">
-                <div className="container mx-auto px-4 py-8">
-                    <Skeleton className="h-8 w-48 mb-8" />
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-48" />
-                        ))}
-                    </div>
+            <div>
+                <Skeleton className="h-10 w-56" />
+                <Skeleton className="mt-3 h-5 w-72" />
+                <div className="mt-8 grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+                    {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-72" />
+                    ))}
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Navigation */}
-            <nav className="border-b bg-card sticky top-0 z-50">
-                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                    <Link href="/dashboard" className="flex items-center gap-2">
-                        <img src="/favicon.ico" alt="KaQuiz" className="w-10 h-10 rounded-xl object-contain" />
-                        <span className="text-xl font-bold tracking-tight">KaQuiz</span>
+        <>
+            <PageHeading
+                overline="01 / QUIZ LIBRARY"
+                title="Quiz ของฉัน"
+                description="จัดการ Quiz ทั้งหมดของคุณ — แก้ไข โฮสต์ หรือลบได้จากที่นี่"
+                actions={
+                    <Link href="/quizzes/new" className="kq-btn kq-btn-yellow">
+                        <Plus className="size-4" />
+                        สร้าง Quiz
                     </Link>
-                    <Link href="/quizzes/new">
-                        <Button>
-                            <Plus className="w-4 h-4 mr-2" />
+                }
+            />
+
+            {isLoading ? (
+                <div className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+                    {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-72" />
+                    ))}
+                </div>
+            ) : quizzes.length === 0 ? (
+                <EmptyState
+                    title="ยังไม่มี Quiz"
+                    description="เริ่มต้นสร้าง Quiz แรกของคุณเลย!"
+                    icon={<FileQuestion className="size-8 text-ink" />}
+                    action={
+                        <Link href="/quizzes/new" className="kq-btn kq-btn-yellow">
+                            <Plus className="size-4" />
                             สร้าง Quiz
-                        </Button>
-                    </Link>
-                </div>
-            </nav>
+                        </Link>
+                    }
+                />
+            ) : (
+                <div className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+                    {quizzes.map((quiz, index) => (
+                        <article
+                            key={quiz.id}
+                            className="kq-card kq-card-hover flex flex-col"
+                        >
+                            <div
+                                className="kq-art relative grid h-32 place-items-center"
+                                style={{ backgroundColor: ART_TINTS[index % ART_TINTS.length] }}
+                            >
+                                <span className="kq-badge absolute left-3 top-3">
+                                    QUIZ {String(index + 1).padStart(2, "0")}
+                                </span>
+                                <span className="absolute right-3 top-3">
+                                    <span
+                                        className={`kq-badge ${
+                                            quiz.isPublished ? "kq-badge-mint" : "kq-badge-paper"
+                                        }`}
+                                    >
+                                        {quiz.isPublished ? "เผยแพร่แล้ว" : "ฉบับร่าง"}
+                                    </span>
+                                </span>
 
-            {/* Main Content */}
-            <main className="container mx-auto px-4 py-8">
-                <Link href="/dashboard" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
-                    <ArrowLeft className="w-4 h-4" />
-                    กลับไปหน้า Dashboard
-                </Link>
-
-                <div className="flex items-center justify-between mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold">Quiz ของฉัน</h1>
-                        <p className="text-muted-foreground">จัดการ Quiz ทั้งหมดของคุณ</p>
-                    </div>
-                </div>
-
-                {isLoading ? (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-48" />
-                        ))}
-                    </div>
-                ) : quizzes.length === 0 ? (
-                    <Card className="border-dashed">
-                        <CardContent className="flex flex-col items-center justify-center py-16">
-                            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                                <FileQuestion className="w-8 h-8 text-muted-foreground" />
+                                <span className="grid size-20 rotate-[4deg] place-items-center border-[3px] border-line bg-paper shadow-hard-sm">
+                                    <FileQuestion className="size-9 text-ink" strokeWidth={2.4} />
+                                </span>
                             </div>
-                            <h3 className="text-lg font-medium mb-2">ยังไม่มี Quiz</h3>
-                            <p className="text-muted-foreground mb-4 text-center">
-                                เริ่มต้นสร้าง Quiz แรกของคุณเลย!
-                            </p>
-                            <Link href="/quizzes/new">
-                                <Button>
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    สร้าง Quiz
-                                </Button>
-                            </Link>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {quizzes.map((quiz) => (
-                            <Card key={quiz.id} className="hover:shadow-lg transition-shadow">
-                                <CardHeader className="pb-3">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex-1 min-w-0">
-                                            <CardTitle className="text-lg truncate">{quiz.title}</CardTitle>
-                                            <CardDescription className="line-clamp-2 mt-1">
-                                                {quiz.description || "ไม่มีคำอธิบาย"}
-                                            </CardDescription>
-                                        </div>
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="shrink-0">
-                                                    <MoreVertical className="w-4 h-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem asChild>
-                                                    <Link href={`/quizzes/${quiz.id}/edit`}>
-                                                        <Edit className="w-4 h-4 mr-2" />
-                                                        แก้ไข
-                                                    </Link>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem asChild>
-                                                    <Link href={`/quizzes/${quiz.id}/host`}>
-                                                        <Play className="w-4 h-4 mr-2" />
-                                                        เริ่มเกม
-                                                    </Link>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                    className="text-destructive"
-                                                    onClick={() => setDeleteId(quiz.id)}
-                                                >
-                                                    <Trash2 className="w-4 h-4 mr-2" />
-                                                    ลบ
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </div>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <Badge variant={quiz.isPublished ? "default" : "secondary"}>
-                                            {quiz.isPublished ? "เผยแพร่แล้ว" : "ฉบับร่าง"}
-                                        </Badge>
-                                        <Badge variant="outline">
-                                            {quiz._count.questions} คำถาม
-                                        </Badge>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <Link href={`/quizzes/${quiz.id}/edit`} className="flex-1">
-                                            <Button variant="outline" className="w-full">
-                                                <Edit className="w-4 h-4 mr-2" />
-                                                แก้ไข
-                                            </Button>
-                                        </Link>
-                                        <Link href={`/quizzes/${quiz.id}/host`} className="flex-1">
-                                            <Button className="w-full">
-                                                <Play className="w-4 h-4 mr-2" />
-                                                เริ่มเกม
-                                            </Button>
-                                        </Link>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                )}
-            </main>
+
+                            <div className="flex flex-1 flex-col gap-3 p-5">
+                                <h2 className="truncate text-xl font-bold text-ink" title={quiz.title}>
+                                    {quiz.title}
+                                </h2>
+                                <p className="line-clamp-2 flex-1 text-sm font-medium text-muted-foreground">
+                                    {quiz.description || "ไม่มีคำอธิบาย"}
+                                </p>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="kq-badge kq-badge-cyan">
+                                        {quiz._count.questions} คำถาม
+                                    </span>
+                                    <span className="kq-badge kq-badge-peach">
+                                        {quiz._count.gameSessions} เกม
+                                    </span>
+                                </div>
+
+                                <div className="mt-1 flex flex-wrap gap-2 border-t-2 border-dashed border-line/30 pt-4">
+                                    <Link
+                                        href={`/quizzes/${quiz.id}/edit`}
+                                        className="kq-btn kq-btn-sm kq-btn-paper flex-1"
+                                    >
+                                        <Edit className="size-4" />
+                                        แก้ไข
+                                    </Link>
+                                    <Link
+                                        href={`/quizzes/${quiz.id}/host`}
+                                        className="kq-btn kq-btn-sm kq-btn-yellow flex-1"
+                                    >
+                                        <Play className="size-4" />
+                                        โฮสต์
+                                    </Link>
+                                    <button
+                                        type="button"
+                                        onClick={() => setDeleteId(quiz.id)}
+                                        className="kq-btn kq-btn-sm kq-btn-danger"
+                                        aria-label={`ลบ Quiz ${quiz.title}`}
+                                    >
+                                        <Trash2 className="size-4" />
+                                        ลบ
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    ))}
+                </div>
+            )}
 
             {/* Delete Confirmation Dialog */}
             <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
+                        <AlertDialogMedia>
+                            <Trash2 />
+                        </AlertDialogMedia>
                         <AlertDialogTitle>ยืนยันการลบ Quiz?</AlertDialogTitle>
                         <AlertDialogDescription>
                             การลบนี้จะไม่สามารถกู้คืนได้ คำถามและข้อมูลทั้งหมดจะถูกลบไปด้วย
@@ -262,12 +238,12 @@ export default function QuizzesPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        <AlertDialogAction variant="destructive" onClick={handleDelete}>
                             ลบ Quiz
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-        </div>
+        </>
     );
 }

@@ -6,12 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuthStore } from "@/stores/auth-store";
 import { UploadButton } from "@/lib/uploadthing-components";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -29,8 +23,9 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { PageHeading } from "@/components/page-heading";
+import { EmptyState } from "@/components/empty-state";
 import {
-    Sparkles,
     ArrowLeft,
     Plus,
     Edit,
@@ -41,7 +36,9 @@ import {
     GripVertical,
     Check,
     X,
-    ImageIcon
+    ImageIcon,
+    Clock,
+    Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +70,12 @@ interface Quiz {
 }
 
 const ANSWER_COLORS: ("red" | "blue" | "green" | "yellow")[] = ["red", "blue", "green", "yellow"];
+
+const QUESTION_TYPE_LABEL: Record<Question["type"], string> = {
+    MULTIPLE_CHOICE: "MULTIPLE CHOICE",
+    TRUE_FALSE: "TRUE / FALSE",
+    TYPE_ANSWER: "TYPE ANSWER",
+};
 
 const getColorClass = (color: string) => {
     const colors: Record<string, string> = {
@@ -307,323 +310,535 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
         }));
     };
 
+    const handleSetAnswerColor = (index: number, color: Answer["color"]) => {
+        setNewQuestion(prev => ({
+            ...prev,
+            answers: prev.answers.map((a, i) => (i === index ? { ...a, color } : a)),
+        }));
+    };
+
     if (authLoading || isLoading) {
         return (
-            <div className="min-h-screen bg-background">
-                <nav className="border-b bg-card sticky top-0 z-50">
-                    <div className="container mx-auto px-4 h-16 flex items-center">
-                        <Skeleton className="h-10 w-32" />
-                    </div>
-                </nav>
-                <div className="container mx-auto px-4 py-8">
-                    <Skeleton className="h-8 w-64 mb-4" />
-                    <Skeleton className="h-48 mb-4" />
-                    <Skeleton className="h-32" />
-                </div>
+            <div>
+                <Skeleton className="h-10 w-56" />
+                <Skeleton className="mt-3 h-5 w-72" />
+                <Skeleton className="mt-8 h-56" />
+                <Skeleton className="mt-6 h-44" />
             </div>
         );
     }
 
     if (!quiz) return null;
 
+    const hostDisabled = quiz.questions.length === 0;
+
     return (
-        <div className="min-h-screen bg-background">
-            {/* Navigation */}
-            <nav className="border-b bg-card sticky top-0 z-50">
-                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                    <Link href="/dashboard" className="flex items-center gap-2">
-                        <img src="/favicon.ico" alt="KaQuiz" className="w-10 h-10 rounded-xl object-contain" />
-                        <span className="text-xl font-bold tracking-tight">KaQuiz</span>
-                    </Link>
-                    <div className="flex items-center gap-3">
-                        <Button variant="outline" onClick={handleSaveQuiz} disabled={isSaving}>
-                            {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                            บันทึก
-                        </Button>
-                        <Link href={`/quizzes/${id}/host`}>
-                            <Button disabled={quiz.questions.length === 0}>
-                                <Play className="w-4 h-4 mr-2" />
-                                เริ่มเกม
-                            </Button>
+        <>
+            <PageHeading
+                overline="01 / QUIZ EDITOR"
+                title="แก้ไข Quiz"
+                description={quiz?.title}
+                actions={
+                    <>
+                        <Link href="/quizzes" className="kq-btn kq-btn-sm kq-btn-paper">
+                            <ArrowLeft className="size-4" />
+                            กลับ
                         </Link>
+                        <button
+                            type="button"
+                            onClick={handleSaveQuiz}
+                            disabled={isSaving}
+                            className="kq-btn kq-btn-sm kq-btn-cyan"
+                        >
+                            {isSaving ? (
+                                <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                                <Save className="size-4" />
+                            )}
+                            บันทึก
+                        </button>
+                        <Link
+                            href={`/quizzes/${id}/host`}
+                            aria-disabled={hostDisabled}
+                            className={`kq-btn kq-btn-sm kq-btn-yellow ${
+                                hostDisabled ? "pointer-events-none opacity-45" : ""
+                            }`}
+                        >
+                            <Play className="size-4" />
+                            โฮสต์เกม
+                        </Link>
+                    </>
+                }
+            />
+
+            {/* ================= QUIZ SETTINGS ================= */}
+            <section className="kq-card">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b-[3px] border-line bg-cream px-5 py-4">
+                    <div>
+                        <p className="kq-overline">QUIZ SETTINGS</p>
+                        <h2 className="kq-title mt-1 text-xl">ข้อมูล Quiz</h2>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span
+                            className={`kq-badge ${
+                                quiz.isPublished ? "kq-badge-mint" : "kq-badge-paper"
+                            }`}
+                        >
+                            {quiz.isPublished ? "เผยแพร่แล้ว" : "ฉบับร่าง"}
+                        </span>
+                        <label htmlFor="published" className="kq-label mb-0 cursor-pointer">
+                            เผยแพร่
+                        </label>
+                        <Switch
+                            id="published"
+                            checked={quiz.isPublished}
+                            onCheckedChange={async (checked) => {
+                                setQuiz({ ...quiz, isPublished: checked });
+                                // Auto-save when toggling publish status
+                                try {
+                                    const res = await fetch(`/api/quizzes/${id}`, {
+                                        method: "PUT",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({
+                                            ...quiz,
+                                            isPublished: checked,
+                                        }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                        toast.success(checked ? "เผยแพร่แล้ว" : "ยกเลิกการเผยแพร่แล้ว");
+                                    } else {
+                                        toast.error(data.error || "บันทึกไม่สำเร็จ");
+                                        setQuiz({ ...quiz, isPublished: !checked });
+                                    }
+                                } catch {
+                                    toast.error("เกิดข้อผิดพลาด");
+                                    setQuiz({ ...quiz, isPublished: !checked });
+                                }
+                            }}
+                        />
                     </div>
                 </div>
-            </nav>
 
-            {/* Main Content */}
-            <main className="container mx-auto px-4 py-8">
-                <Link href="/quizzes" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
-                    <ArrowLeft className="w-4 h-4" />
-                    กลับไปหน้า Quiz ของฉัน
-                </Link>
+                <div className="grid gap-5 p-5">
+                    <div>
+                        <label htmlFor="quiz-title" className="kq-label">
+                            ชื่อ Quiz
+                        </label>
+                        <input
+                            id="quiz-title"
+                            value={quiz.title}
+                            onChange={(e) => setQuiz({ ...quiz, title: e.target.value })}
+                            className="kq-input text-lg font-bold"
+                            placeholder="ชื่อ Quiz"
+                        />
+                    </div>
 
-                {/* Quiz Info */}
-                <Card className="mb-6">
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <div className="flex-1 space-y-2">
-                                <Input
-                                    value={quiz.title}
-                                    onChange={(e) => setQuiz({ ...quiz, title: e.target.value })}
-                                    className="text-2xl font-bold h-auto py-2 border-none shadow-none focus-visible:ring-0 px-0"
-                                    placeholder="ชื่อ Quiz"
-                                />
-                                <Textarea
-                                    value={quiz.description || ""}
-                                    onChange={(e) => setQuiz({ ...quiz, description: e.target.value })}
-                                    className="resize-none border-none shadow-none focus-visible:ring-0 px-0"
-                                    placeholder="เพิ่มคำอธิบาย..."
-                                    rows={2}
-                                />
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Label htmlFor="published" className="text-sm text-muted-foreground">
-                                    เผยแพร่
-                                </Label>
-                                <Switch
-                                    id="published"
-                                    checked={quiz.isPublished}
-                                    onCheckedChange={async (checked) => {
-                                        setQuiz({ ...quiz, isPublished: checked });
-                                        // Auto-save when toggling publish status
-                                        try {
-                                            const res = await fetch(`/api/quizzes/${id}`, {
-                                                method: "PUT",
-                                                headers: { "Content-Type": "application/json" },
-                                                body: JSON.stringify({
-                                                    ...quiz,
-                                                    isPublished: checked,
-                                                }),
-                                            });
-                                            const data = await res.json();
-                                            if (data.success) {
-                                                toast.success(checked ? "เผยแพร่แล้ว" : "ยกเลิกการเผยแพร่แล้ว");
-                                            } else {
-                                                toast.error(data.error || "บันทึกไม่สำเร็จ");
-                                                setQuiz({ ...quiz, isPublished: !checked });
-                                            }
-                                        } catch {
-                                            toast.error("เกิดข้อผิดพลาด");
-                                            setQuiz({ ...quiz, isPublished: !checked });
-                                        }
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    </CardHeader>
-                </Card>
-
-                {/* Questions List */}
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold">คำถาม ({quiz.questions.length})</h2>
-                    <Button onClick={() => setShowAddQuestion(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        เพิ่มคำถาม
-                    </Button>
+                    <div>
+                        <label htmlFor="quiz-description" className="kq-label">
+                            คำอธิบาย
+                        </label>
+                        <textarea
+                            id="quiz-description"
+                            value={quiz.description || ""}
+                            onChange={(e) => setQuiz({ ...quiz, description: e.target.value })}
+                            className="kq-textarea"
+                            placeholder="เพิ่มคำอธิบาย..."
+                            rows={2}
+                        />
+                    </div>
                 </div>
+            </section>
 
-                {quiz.questions.length === 0 ? (
-                    <Card className="border-dashed">
-                        <CardContent className="flex flex-col items-center justify-center py-16">
-                            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                                <Plus className="w-8 h-8 text-muted-foreground" />
-                            </div>
-                            <h3 className="text-lg font-medium mb-2">ยังไม่มีคำถาม</h3>
-                            <p className="text-muted-foreground mb-4">เริ่มต้นด้วยการเพิ่มคำถามแรก</p>
-                            <Button onClick={() => setShowAddQuestion(true)}>
-                                <Plus className="w-4 h-4 mr-2" />
-                                เพิ่มคำถาม
-                            </Button>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <div className="space-y-4">
-                        {quiz.questions.map((question, index) => (
-                            <Card key={question.id}>
-                                <CardHeader className="pb-3">
-                                    <div className="flex items-start gap-4">
-                                        <div className="flex items-center gap-2 text-muted-foreground">
-                                            <GripVertical className="w-5 h-5" />
-                                            <span className="text-lg font-bold">{index + 1}</span>
-                                        </div>
-                                        <div className="flex-1">
-                                            <CardTitle className="text-lg">{question.questionText}</CardTitle>
-                                            <div className="flex gap-2 mt-2">
-                                                <Badge variant="outline">{question.timeLimit} วินาที</Badge>
-                                                <Badge variant="outline">{question.points} คะแนน</Badge>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-1">
-                                            <Button variant="ghost" size="icon" onClick={() => handleEditQuestion(question)}>
-                                                <Edit className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-destructive hover:bg-destructive/10"
-                                                onClick={() => handleDeleteQuestion(question.id)}
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
+            {/* ================= QUESTION LIST ================= */}
+            <div className="mb-5 mt-10 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                    <p className="kq-overline">02 / QUESTION LIST</p>
+                    <h2 className="kq-title mt-1 text-2xl">
+                        คำถาม ({quiz.questions.length})
+                    </h2>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setShowAddQuestion(true)}
+                    className="kq-btn kq-btn-yellow"
+                >
+                    <Plus className="size-4" />
+                    เพิ่มคำถาม
+                </button>
+            </div>
+
+            {quiz.questions.length === 0 ? (
+                <EmptyState
+                    title="ยังไม่มีคำถาม"
+                    description="เริ่มต้นด้วยการเพิ่มคำถามแรก แล้วชวนเพื่อน ๆ มาแข่งกัน!"
+                    icon={<Plus className="size-8 text-ink" />}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => setShowAddQuestion(true)}
+                            className="kq-btn kq-btn-yellow"
+                        >
+                            <Plus className="size-4" />
+                            เพิ่มคำถาม
+                        </button>
+                    }
+                />
+            ) : (
+                <div className="grid gap-7">
+                    {quiz.questions.map((question, index) => (
+                        <article key={question.id} className="kq-card">
+                            <div className="flex flex-wrap items-start gap-4 p-5">
+                                <div className="flex shrink-0 flex-col items-center gap-2">
+                                    <GripVertical
+                                        className="size-5 cursor-grab text-muted-foreground"
+                                        aria-hidden
+                                    />
+                                    <span className="kq-rank">
+                                        {String(index + 1).padStart(2, "0")}
+                                    </span>
+                                </div>
+
+                                {question.imageUrl ? (
+                                    <div className="relative size-20 shrink-0 overflow-hidden border-[3px] border-line shadow-hard-sm">
+                                        <Image
+                                            src={question.imageUrl}
+                                            alt={`ภาพประกอบคำถามข้อ ${index + 1}`}
+                                            fill
+                                            className="object-cover"
+                                            sizes="80px"
+                                        />
                                     </div>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {question.answers.map((answer) => (
-                                            <div
-                                                key={answer.id}
-                                                className={`p-3 rounded-lg text-white font-medium flex items-center gap-2 ${getColorClass(answer.color)}`}
-                                            >
-                                                {answer.isCorrect && <Check className="w-4 h-4" />}
+                                ) : null}
+
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="text-lg font-bold text-ink">
+                                        {question.questionText}
+                                    </h3>
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                                        <span className="kq-badge kq-badge-grape">
+                                            {QUESTION_TYPE_LABEL[question.type]}
+                                        </span>
+                                        <span className="kq-badge kq-badge-cyan">
+                                            <Clock className="size-3" aria-hidden />
+                                            {question.timeLimit} วินาที
+                                        </span>
+                                        <span className="kq-badge kq-badge-mint">
+                                            <Trophy className="size-3" aria-hidden />
+                                            {question.points} คะแนน
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleEditQuestion(question)}
+                                        className="kq-btn kq-btn-sm kq-btn-paper"
+                                    >
+                                        <Edit className="size-3.5" />
+                                        แก้ไข
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteQuestion(question.id)}
+                                        className="kq-btn kq-btn-sm kq-btn-danger"
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                        ลบ
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="border-t-2 border-dashed border-line/30 bg-cream px-5 py-4">
+                                <div className="grid gap-2.5 sm:grid-cols-2">
+                                    {question.answers.map((answer) => (
+                                        <div
+                                            key={answer.id}
+                                            className="flex items-center gap-2.5 border-[3px] border-line bg-paper px-3 py-2 shadow-hard-sm"
+                                        >
+                                            <span
+                                                className={`size-5 shrink-0 border-[3px] border-line ${getColorClass(answer.color)}`}
+                                                aria-hidden
+                                            />
+                                            <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">
                                                 {answer.answerText}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                )}
-            </main>
+                                            </span>
+                                            {answer.isCorrect ? (
+                                                <span className="kq-badge kq-badge-mint">ข้อถูก</span>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </article>
+                    ))}
+                </div>
+            )}
 
-            {/* Add Question Dialog */}
+            {/* ================= ADD / EDIT QUESTION ================= */}
             <Dialog open={showAddQuestion} onOpenChange={setShowAddQuestion}>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>{editingQuestionId ? "แก้ไขคำถาม" : "เพิ่มคำถามใหม่"}</DialogTitle>
+                        <p className="kq-overline">
+                            {editingQuestionId ? "EDIT QUESTION" : "NEW QUESTION"}
+                        </p>
+                        <DialogTitle>
+                            {editingQuestionId ? "แก้ไขคำถาม" : "เพิ่มคำถามใหม่"}
+                        </DialogTitle>
                         <DialogDescription>
-                            {editingQuestionId ? "แก้ไขรายละเอียดคำถามและตัวเลือก" : "กรอกข้อมูลคำถามและตัวเลือกคำตอบ"}
+                            {editingQuestionId
+                                ? "แก้ไขรายละเอียดคำถามและตัวเลือก"
+                                : "กรอกข้อมูลคำถามและตัวเลือกคำตอบ"}
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-6 py-4">
+                    <div className="grid gap-6 py-2">
                         {/* Question Text */}
-                        <div className="space-y-2">
-                            <Label>คำถาม *</Label>
-                            <Textarea
+                        <div>
+                            <label htmlFor="question-text" className="kq-label">
+                                คำถาม *
+                            </label>
+                            <textarea
+                                id="question-text"
                                 value={newQuestion.questionText}
-                                onChange={(e) => setNewQuestion({ ...newQuestion, questionText: e.target.value })}
+                                onChange={(e) =>
+                                    setNewQuestion({ ...newQuestion, questionText: e.target.value })
+                                }
+                                className="kq-textarea"
                                 placeholder="พิมพ์คำถามของคุณ..."
                                 rows={3}
                             />
                         </div>
 
-                        {/* Image Upload */}
-                        <div className="space-y-2">
-                            <Label className="flex items-center gap-2">
-                                <ImageIcon className="w-4 h-4" />
-                                รูปภาพประกอบ (ไม่บังคับ)
-                            </Label>
-                            {newQuestion.imageUrl ? (
-                                <div className="relative">
-                                    <Image
-                                        src={newQuestion.imageUrl}
-                                        alt="Question image"
-                                        width={400}
-                                        height={200}
-                                        className="rounded-lg object-cover w-full max-h-48"
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="destructive"
-                                        size="sm"
-                                        className="absolute top-2 right-2"
-                                        onClick={() => setNewQuestion({ ...newQuestion, imageUrl: "" })}
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </Button>
-                                </div>
-                            ) : (
-                                <UploadButton
-                                    endpoint="questionImage"
-                                    onClientUploadComplete={(res) => {
-                                        if (res?.[0]) {
-                                            setNewQuestion({ ...newQuestion, imageUrl: res[0].url });
-                                            toast.success("อัปโหลดรูปสำเร็จ");
-                                        }
-                                    }}
-                                    onUploadError={(error: Error) => {
-                                        toast.error(`อัปโหลดไม่สำเร็จ: ${error.message}`);
-                                    }}
-                                />
-                            )}
-                        </div>
-
                         {/* Settings */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>เวลา (วินาที)</Label>
+                        <div className="grid gap-4 sm:grid-cols-3">
+                            <div>
+                                <label htmlFor="question-type" className="kq-label">
+                                    ประเภทคำถาม
+                                </label>
+                                <Select
+                                    value={newQuestion.type}
+                                    onValueChange={(v) =>
+                                        setNewQuestion({
+                                            ...newQuestion,
+                                            type: v as "MULTIPLE_CHOICE" | "TRUE_FALSE" | "TYPE_ANSWER",
+                                        })
+                                    }
+                                >
+                                    <SelectTrigger id="question-type" className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="MULTIPLE_CHOICE">
+                                            ปรนัย 4 ตัวเลือก
+                                        </SelectItem>
+                                        <SelectItem value="TRUE_FALSE">ถูก / ผิด</SelectItem>
+                                        <SelectItem value="TYPE_ANSWER">พิมพ์คำตอบ</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div>
+                                <label htmlFor="question-time" className="kq-label">
+                                    เวลา (วินาที)
+                                </label>
                                 <Select
                                     value={newQuestion.timeLimit.toString()}
-                                    onValueChange={(v) => setNewQuestion({ ...newQuestion, timeLimit: parseInt(v) })}
+                                    onValueChange={(v) =>
+                                        setNewQuestion({ ...newQuestion, timeLimit: parseInt(v) })
+                                    }
                                 >
-                                    <SelectTrigger>
+                                    <SelectTrigger id="question-time" className="w-full">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {[5, 10, 15, 20, 30, 45, 60, 90, 120].map((t) => (
-                                            <SelectItem key={t} value={t.toString()}>{t} วินาที</SelectItem>
+                                            <SelectItem key={t} value={t.toString()}>
+                                                {t} วินาที
+                                            </SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-2">
-                                <Label>คะแนน</Label>
+
+                            <div>
+                                <label htmlFor="question-points" className="kq-label">
+                                    คะแนน
+                                </label>
                                 <Select
                                     value={newQuestion.points.toString()}
-                                    onValueChange={(v) => setNewQuestion({ ...newQuestion, points: parseInt(v) })}
+                                    onValueChange={(v) =>
+                                        setNewQuestion({ ...newQuestion, points: parseInt(v) })
+                                    }
                                 >
-                                    <SelectTrigger>
+                                    <SelectTrigger id="question-points" className="w-full">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {[500, 1000, 1500, 2000].map((p) => (
-                                            <SelectItem key={p} value={p.toString()}>{p} คะแนน</SelectItem>
+                                            <SelectItem key={p} value={p.toString()}>
+                                                {p} คะแนน
+                                            </SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
                         </div>
 
-                        {/* Answers */}
-                        <div className="space-y-3">
-                            <Label>คำตอบ (คลิกเพื่อเลือกคำตอบที่ถูกต้อง)</Label>
-                            {newQuestion.answers.map((answer, index) => (
-                                <div key={index} className="flex items-center gap-2">
+                        {/* Image Upload */}
+                        <div>
+                            <span className="kq-label flex items-center gap-2">
+                                <ImageIcon className="size-4" aria-hidden />
+                                รูปภาพประกอบ (ไม่บังคับ)
+                            </span>
+                            {newQuestion.imageUrl ? (
+                                <div className="relative">
+                                    <div className="relative h-48 w-full overflow-hidden border-[3px] border-line shadow-hard-sm">
+                                        <Image
+                                            src={newQuestion.imageUrl}
+                                            alt="ภาพประกอบคำถาม"
+                                            fill
+                                            className="object-cover"
+                                            sizes="(max-width: 672px) 100vw, 672px"
+                                        />
+                                    </div>
                                     <button
                                         type="button"
-                                        onClick={() => handleSetCorrectAnswer(index)}
-                                        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-all ${getColorClass(ANSWER_COLORS[index])} ${answer.isCorrect ? "ring-2 ring-offset-2 ring-primary" : "opacity-50"}`}
+                                        onClick={() =>
+                                            setNewQuestion({ ...newQuestion, imageUrl: "" })
+                                        }
+                                        aria-label="ลบรูปภาพ"
+                                        className="kq-btn kq-btn-sm kq-btn-danger absolute -right-2 -top-3"
                                     >
-                                        {answer.isCorrect ? <Check className="w-5 h-5 text-white" /> : <X className="w-5 h-5 text-white/50" />}
+                                        <X className="size-3.5" />
                                     </button>
-                                    <Input
-                                        value={answer.answerText}
-                                        onChange={(e) => {
-                                            const newAnswers = [...newQuestion.answers];
-                                            newAnswers[index] = { ...newAnswers[index], answerText: e.target.value };
-                                            setNewQuestion({ ...newQuestion, answers: newAnswers });
+                                </div>
+                            ) : (
+                                <div className="grid place-items-center border-[3px] border-dashed border-line/40 bg-cream p-4">
+                                    <UploadButton
+                                        endpoint="questionImage"
+                                        onClientUploadComplete={(res) => {
+                                            if (res?.[0]) {
+                                                setNewQuestion({ ...newQuestion, imageUrl: res[0].url });
+                                                toast.success("อัปโหลดรูปสำเร็จ");
+                                            }
                                         }}
-                                        placeholder={`คำตอบที่ ${index + 1}`}
-                                        className="flex-1"
+                                        onUploadError={(error: Error) => {
+                                            toast.error(`อัปโหลดไม่สำเร็จ: ${error.message}`);
+                                        }}
                                     />
                                 </div>
-                            ))}
+                            )}
+                        </div>
+
+                        {/* Answers */}
+                        <div>
+                            <span className="kq-label">
+                                คำตอบ (คลิกช่องสีเพื่อตั้งข้อถูก · เลือกสีได้ที่แถว COLOR)
+                            </span>
+                            <div className="grid gap-3">
+                                {newQuestion.answers.map((answer, index) => (
+                                    <div
+                                        key={index}
+                                        className="border-[3px] border-line bg-cream p-3 shadow-hard-sm"
+                                    >
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSetCorrectAnswer(index)}
+                                                aria-pressed={answer.isCorrect}
+                                                aria-label={
+                                                    answer.isCorrect
+                                                        ? `คำตอบที่ ${index + 1} เป็นข้อถูก`
+                                                        : `ตั้งคำตอบที่ ${index + 1} เป็นข้อถูก`
+                                                }
+                                                className={`grid size-10 shrink-0 place-items-center border-[3px] border-line ${getColorClass(
+                                                    answer.color
+                                                )} ${answer.isCorrect ? "opacity-100" : "opacity-55"}`}
+                                            >
+                                                {answer.isCorrect ? (
+                                                    <Check
+                                                        className="size-5 text-[#211543]"
+                                                        strokeWidth={3}
+                                                    />
+                                                ) : (
+                                                    <X
+                                                        className="size-5 text-[#211543]"
+                                                        strokeWidth={3}
+                                                    />
+                                                )}
+                                            </button>
+                                            <input
+                                                value={answer.answerText}
+                                                onChange={(e) => {
+                                                    const newAnswers = [...newQuestion.answers];
+                                                    newAnswers[index] = {
+                                                        ...newAnswers[index],
+                                                        answerText: e.target.value,
+                                                    };
+                                                    setNewQuestion({ ...newQuestion, answers: newAnswers });
+                                                }}
+                                                placeholder={`คำตอบที่ ${index + 1}`}
+                                                aria-label={`คำตอบที่ ${index + 1}`}
+                                                className="kq-input min-w-32 flex-1"
+                                            />
+                                        </div>
+
+                                        <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-13">
+                                            <span className="kq-pixel text-[8px] text-muted-foreground">
+                                                COLOR
+                                            </span>
+                                            {ANSWER_COLORS.map((c) => (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    onClick={() => handleSetAnswerColor(index, c)}
+                                                    aria-label={`เลือกสี ${c}`}
+                                                    title={c}
+                                                    className={`size-5 border-2 border-line ${getColorClass(
+                                                        c
+                                                    )} ${
+                                                        answer.color === c
+                                                            ? "outline-2 outline-offset-2 outline-line"
+                                                            : "opacity-40 hover:opacity-80"
+                                                    }`}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
 
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => { setShowAddQuestion(false); resetNewQuestion(); }}>
+                        <button
+                            type="button"
+                            className="kq-btn kq-btn-paper"
+                            onClick={() => {
+                                setShowAddQuestion(false);
+                                resetNewQuestion();
+                            }}
+                        >
                             ยกเลิก
-                        </Button>
-                        <Button onClick={handleQuestionSubmit}>
-                            {editingQuestionId ? <Save className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                        </button>
+                        <button
+                            type="button"
+                            className="kq-btn kq-btn-yellow"
+                            onClick={handleQuestionSubmit}
+                        >
+                            {editingQuestionId ? (
+                                <Save className="size-4" />
+                            ) : (
+                                <Plus className="size-4" />
+                            )}
                             {editingQuestionId ? "บันทึกการแก้ไข" : "เพิ่มคำถาม"}
-                        </Button>
+                        </button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </>
     );
 }

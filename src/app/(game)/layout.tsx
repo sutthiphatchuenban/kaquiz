@@ -10,5 +10,5 @@ export default function GameLayout({
 }: {
     children: React.ReactNode;
 }) {
-    return <>{children}</>;
+    return <div className="kq-game-bg min-h-dvh">{children}</div>;
 }

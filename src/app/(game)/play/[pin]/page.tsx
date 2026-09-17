@@ -1,29 +1,33 @@
 "use client";
 
-import { useState, useEffect, use, useCallback } from "react";
+import { useState, useEffect, use, useCallback, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/stores/game-store";
 import { useSocket } from "@/hooks/use-socket";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
-    Sparkles,
-    Loader2,
-    Users,
     Check,
-    X,
+    Clock,
+    Gamepad2,
+    Loader2,
+    RotateCcw,
     Trophy,
-    Clock
+    Users,
+    X,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ArcadeSprite } from "@/components/arcade-sprite";
+import { Marquee } from "@/components/marquee";
+
+const ANSWER_LETTERS = ["A", "B", "C", "D"];
+
 const getColorClass = (color: string) => {
     const colors: Record<string, string> = {
-        red: "bg-[var(--answer-red)] hover:bg-[var(--answer-red)]/90",
-        blue: "bg-[var(--answer-blue)] hover:bg-[var(--answer-blue)]/90",
-        green: "bg-[var(--answer-green)] hover:bg-[var(--answer-green)]/90",
-        yellow: "bg-[var(--answer-yellow)] hover:bg-[var(--answer-yellow)]/90",
+        red: "kq-answer-red",
+        blue: "kq-answer-blue",
+        green: "kq-answer-green",
+        yellow: "kq-answer-yellow",
     };
     return colors[color] || colors.red;
 };
@@ -49,11 +53,27 @@ interface GameData {
     pin: string;
     status: string;
     currentQuestionIndex: number;
+    startedAt: string | null;
     quiz: {
         title: string;
         questions: Question[];
     };
     players: { id: string; nickname: string; score: number }[];
+}
+
+function PlayerBar({ nickname, score }: { nickname: string; score: number }) {
+    return (
+        <header className="flex items-center justify-between gap-3 px-4 pt-4">
+            <span className="kq-badge kq-badge-cyan min-w-0">
+                <Gamepad2 className="size-3.5 flex-none" />
+                <span className="truncate">{nickname}</span>
+            </span>
+            <span className="kq-badge flex-none">
+                <Trophy className="size-3.5" />
+                {score.toLocaleString()}
+            </span>
+        </header>
+    );
 }
 
 export default function PlayPage({ params }: { params: Promise<{ pin: string }> }) {
@@ -90,6 +110,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [myScore, setMyScore] = useState(0);
     const [myRank, setMyRank] = useState(0);
+    const [timerTick, setTimerTick] = useState(0);
 
     // Validate PIN and fetch game
     useEffect(() => {
@@ -159,34 +180,50 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         };
     }, [playerId, isConnected]);
 
-    // Timer effect
-    useEffect(() => {
-        let timer: NodeJS.Timeout;
+    // Compute timeRemaining from server startedAt so host & player stay in sync
+    const computedTimeRemaining = useCallback(() => {
+        if (gameData?.status !== "QUESTION" || !gameData?.startedAt) return 0;
+        const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
+        if (!currentQuestion) return 0;
+        const elapsed = Math.floor((Date.now() - new Date(gameData.startedAt).getTime()) / 1000);
+        return Math.max(0, currentQuestion.timeLimit - elapsed);
+    }, [gameData?.status, gameData?.startedAt, gameData?.currentQuestionIndex, gameData?.quiz?.questions]);
 
-        if (gameData?.status === "QUESTION" && timeRemaining > 0 && !hasAnswered) {
-            timer = setInterval(() => {
-                setTimeRemaining((prev) => Math.max(0, prev - 1));
-            }, 1000);
-        }
-
-        return () => {
-            if (timer) clearInterval(timer);
-        };
-    }, [gameData?.status, timeRemaining, hasAnswered]);
+    const initializedQuestionRef = useRef<{ index: number; startedAt: string | null }>({ index: -1, startedAt: null });
 
     // Reset state when question changes
     useEffect(() => {
         if (gameData?.status === "QUESTION") {
             const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
-            if (currentQuestion) {
-                setTimeRemaining(currentQuestion.timeLimit);
+            const isNewQuestion = 
+                initializedQuestionRef.current.index !== gameData.currentQuestionIndex ||
+                initializedQuestionRef.current.startedAt !== gameData.startedAt;
+
+            if (currentQuestion && isNewQuestion) {
+                setTimeRemaining(computedTimeRemaining());
                 setAnswerStartTime(Date.now());
                 setSelectedAnswer(null);
                 setHasAnswered(false);
                 setAnswerResult(null as any, 0);
+
+                initializedQuestionRef.current = {
+                    index: gameData.currentQuestionIndex,
+                    startedAt: gameData.startedAt
+                };
             }
         }
-    }, [gameData?.status, gameData?.currentQuestionIndex]);
+    }, [gameData?.status, gameData?.currentQuestionIndex, gameData?.startedAt, computedTimeRemaining, gameData?.quiz?.questions]);
+
+    // Tick every second to update the countdown display
+    useEffect(() => {
+        if (gameData?.status !== "QUESTION" || hasAnswered) return;
+        const tick = setInterval(() => {
+            setTimerTick((t) => t + 1);
+            const remaining = computedTimeRemaining();
+            setTimeRemaining(remaining);
+        }, 1000);
+        return () => clearInterval(tick);
+    }, [gameData?.status, hasAnswered, computedTimeRemaining]);
 
     // Update my score and rank
     useEffect(() => {
@@ -295,8 +332,12 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
 
     if (isLoading) {
         return (
-            <div className="min-h-screen game-bg flex items-center justify-center">
-                <Loader2 className="w-12 h-12 animate-spin text-white" />
+            <div className="grid min-h-dvh place-items-center px-4">
+                <div className="grid place-items-center gap-4 text-center">
+                    <ArcadeSprite kind="bot" className="size-20 animate-float" />
+                    <Loader2 className="size-10 animate-spin text-[var(--sunny)]" />
+                    <p className="kq-pixel text-[9px] text-[var(--on-arcade)]">LOADING...</p>
+                </div>
             </div>
         );
     }
@@ -309,60 +350,104 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     if (!playerId) {
         if (gameData.status !== "LOBBY") {
             return (
-                <div className="min-h-screen game-bg flex items-center justify-center p-4 text-white text-center">
-                    <div>
-                        <h1 className="text-3xl font-bold mb-4">เกมเริ่มแล้ว</h1>
-                        <p className="text-white/70 mb-6">ไม่สามารถเข้าร่วมได้ในขณะนี้</p>
-                        <Button onClick={() => router.push("/join")} variant="outline" className="border-white/30 text-white hover:bg-white/10">
-                            กลับหน้าหลัก
-                        </Button>
+                <div className="grid min-h-dvh place-items-center px-4 py-10">
+                    <div className="relative w-full max-w-md">
+                        <span className="kq-sticker absolute -top-5 right-4 z-10 rotate-[7deg] px-3 py-2">
+                            ROUND 01
+                            <br />
+                            STARTED!
+                        </span>
+
+                        <div className="kq-card p-7 text-center">
+                            <ArcadeSprite kind="bot" className="mx-auto size-20" />
+                            <h1 className="kq-title mt-4">เกมเริ่มแล้ว</h1>
+                            <p className="kq-subtitle mt-2 text-sm">
+                                ไม่สามารถเข้าร่วมได้ในขณะนี้
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => router.push("/join")}
+                                className="kq-btn kq-btn-yellow kq-btn-block kq-btn-lg mt-6"
+                            >
+                                กลับหน้าหลัก
+                            </button>
+                        </div>
                     </div>
                 </div>
             );
         }
 
         return (
-            <div className="min-h-screen game-bg flex items-center justify-center p-4">
-                <Card className="w-full max-w-md border-none shadow-2xl">
-                    <CardHeader className="text-center pb-4">
-                        <div className="mx-auto w-16 h-16 rounded-2xl mb-4 flex items-center justify-center">
-                            <img src="/favicon.ico" alt="KaQuiz" className="w-16 h-16 rounded-2xl object-contain" />
+            <div className="grid min-h-dvh place-items-center px-4 py-10">
+                <div className="relative w-full max-w-md">
+                    <span className="kq-sticker absolute -left-3 -top-5 z-10 rotate-[-8deg] px-3 py-2">
+                        PLAYER
+                        <br />
+                        READY!
+                    </span>
+
+                    <div className="kq-card">
+                        <div className="kq-art relative grid place-items-center py-6">
+                            <span className="kq-badge kq-badge-cyan absolute left-3 top-3">
+                                PIN {pin}
+                            </span>
+                            <span className="grid size-20 rotate-[-4deg] place-items-center border-[3px] border-line bg-[var(--paper)] shadow-hard-sm">
+                                <ArcadeSprite kind="bot" className="size-14" />
+                            </span>
                         </div>
-                        <CardTitle className="text-2xl">เข้าร่วม: {gameData.quiz.title}</CardTitle>
-                        <CardDescription>
-                            Game PIN: <span className="font-mono font-bold text-lg text-foreground">{pin}</span>
-                        </CardDescription>
-                    </CardHeader>
-                    <div className="px-6 pb-6 space-y-4">
-                        <div className="space-y-2">
-                            <Input
+
+                        <div className="p-6 sm:p-7">
+                            <p className="kq-overline">02 / YOUR NAME</p>
+                            <h1 className="kq-title mt-2">เข้าร่วม: {gameData.quiz.title}</h1>
+                            <p className="kq-subtitle mt-2 text-sm">
+                                Game PIN:{" "}
+                                <span className="kq-pixel-lg text-[var(--arcade)] dark:text-[var(--sunny)]">
+                                    {pin}
+                                </span>
+                            </p>
+
+                            <label htmlFor="nickname" className="kq-label mt-6">
+                                ชื่อเล่น
+                            </label>
+                            <input
+                                id="nickname"
                                 type="text"
                                 placeholder="ใส่ชื่อเล่นของคุณ"
                                 value={nickname}
                                 onChange={(e) => setNickname(e.target.value)}
-                                className="h-14 text-center text-xl"
+                                className="kq-input h-14 text-center text-lg"
                                 maxLength={20}
                                 disabled={isJoining}
                                 onKeyDown={(e) => e.key === "Enter" && handleJoin()}
                             />
-                            <p className="text-xs text-muted-foreground text-right">{nickname.length}/20</p>
+                            <p className="mt-1 text-right text-xs font-bold text-muted-foreground">
+                                {nickname.length}/20
+                            </p>
+
+                            <button
+                                type="button"
+                                onClick={handleJoin}
+                                disabled={isJoining || !nickname.trim()}
+                                className="kq-btn kq-btn-yellow kq-btn-block kq-btn-lg mt-4"
+                            >
+                                {isJoining ? (
+                                    <>
+                                        <Loader2 className="size-5 animate-spin" />
+                                        กำลังเข้าร่วม...
+                                    </>
+                                ) : (
+                                    "เข้าร่วมเกม"
+                                )}
+                            </button>
                         </div>
-                        <Button
-                            onClick={handleJoin}
-                            className="w-full h-14 text-lg font-semibold"
-                            disabled={isJoining || !nickname.trim()}
-                        >
-                            {isJoining ? (
-                                <>
-                                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                    กำลังเข้าร่วม...
-                                </>
-                            ) : (
-                                "เข้าร่วมเกม"
-                            )}
-                        </Button>
+
+                        <div className="grid grid-cols-3 border-t-[3px] border-line" aria-hidden>
+                            <span className="h-3 bg-[var(--candy)]" />
+                            <span className="h-3 bg-[var(--electric)]" />
+                            <span className="h-3 bg-[var(--sunny)]" />
+                        </div>
                     </div>
-                </Card>
+                </div>
             </div>
         );
     }
@@ -370,22 +455,42 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     // LOBBY - Waiting for game to start
     if (gameData.status === "LOBBY") {
         return (
-            <div className="min-h-screen game-bg flex flex-col items-center justify-center p-4 text-white">
-                <div className="text-center space-y-6">
-                    <div className="w-24 h-24 rounded-full bg-white/10 backdrop-blur flex items-center justify-center mx-auto pulse-kahoot">
-                        <Users className="w-12 h-12" />
+            <div className="flex min-h-dvh flex-col">
+                <PlayerBar nickname={playerNickname ?? "PLAYER"} score={myScore} />
+
+                <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-2 px-4 py-6 text-center">
+                    <p className="kq-pixel text-[9px] text-[var(--on-arcade)]">GAME PIN</p>
+                    <p className="kq-pin">{pin}</p>
+
+                    <div className="kq-card mt-5 w-full p-7">
+                        <ArcadeSprite kind="bot" className="mx-auto size-24 animate-float" />
+
+                        <h1 className="kq-title mt-4">รอเริ่มเกม...</h1>
+                        <p className="kq-subtitle mt-2 text-sm">
+                            เมื่อ Host เริ่มเกม คุณจะเห็นคำถามบนหน้าจอ
+                        </p>
+
+                        <hr className="kq-divider my-5" />
+
+                        <p className="kq-label text-center">คุณเข้าร่วมในชื่อ</p>
+                        <p className="text-2xl font-extrabold">{playerNickname}</p>
+
+                        <p className="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-muted-foreground">
+                            <Users className="size-4" />
+                            {gameData.players.length} ผู้เล่นในห้อง
+                        </p>
                     </div>
-                    <div>
-                        <h1 className="text-3xl font-bold mb-2">รอเริ่มเกม...</h1>
-                        <p className="text-white/70">เมื่อ Host เริ่มเกม คุณจะเห็นคำถามบนหน้าจอ</p>
-                    </div>
-                    <div className="bg-white/10 backdrop-blur rounded-2xl px-8 py-4">
-                        <p className="text-sm text-white/70 mb-1">คุณเข้าร่วมในชื่อ</p>
-                        <p className="text-2xl font-bold">{playerNickname}</p>
-                    </div>
-                    <p className="text-white/50">
-                        {gameData.players.length} ผู้เล่นในห้อง
-                    </p>
+                </main>
+
+                <div className="mt-auto">
+                    <Marquee
+                        items={[
+                            "รอ HOST เริ่มเกม",
+                            "เตรียมนิ้วให้พร้อม",
+                            "ตอบให้ไวที่สุด",
+                            "สะสมคะแนนให้มากที่สุด",
+                        ]}
+                    />
                 </div>
             </div>
         );
@@ -396,59 +501,124 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     // QUESTION - Answering time
     if (gameData.status === "QUESTION" && currentQuestion) {
         if (hasAnswered) {
+            const chosenAnswer = currentQuestion.answers.find((a) => a.id === selectedAnswer);
+            const chosenIndex = currentQuestion.answers.findIndex((a) => a.id === selectedAnswer);
+
             return (
-                <div className="min-h-screen game-bg flex flex-col items-center justify-center p-4 text-white">
-                    <div className="text-center space-y-6">
-                        <div className={`w-32 h-32 rounded-full flex items-center justify-center mx-auto ${lastAnswerCorrect === null ? "bg-white/10" : lastAnswerCorrect ? "bg-green-500" : "bg-red-500"
-                            }`}>
+                <div className="flex min-h-dvh flex-col">
+                    <PlayerBar nickname={playerNickname ?? "PLAYER"} score={myScore} />
+
+                    <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-5 px-4 py-6 text-center">
+                        <div className="kq-card w-full p-7">
+                            <div
+                                className={`mx-auto grid size-24 place-items-center border-[3px] border-line text-[var(--arcade-deep)] ${
+                                    lastAnswerCorrect === null
+                                        ? "bg-[var(--electric)]"
+                                        : lastAnswerCorrect
+                                          ? "animate-bounce-in bg-[var(--mint)]"
+                                          : "animate-shake bg-[var(--candy)]"
+                                }`}
+                            >
+                                {lastAnswerCorrect === null ? (
+                                    <Clock className="size-12" />
+                                ) : lastAnswerCorrect ? (
+                                    <Check className="size-12" />
+                                ) : (
+                                    <X className="size-12" />
+                                )}
+                            </div>
+
                             {lastAnswerCorrect === null ? (
-                                <Clock className="w-16 h-16" />
-                            ) : lastAnswerCorrect ? (
-                                <Check className="w-16 h-16" />
-                            ) : (
-                                <X className="w-16 h-16" />
-                            )}
-                        </div>
-                        <div>
-                            {lastAnswerCorrect === null ? (
-                                <h2 className="text-2xl font-bold">รอผลลัพธ์...</h2>
+                                <h2 className="kq-title mt-5">รอผลลัพธ์...</h2>
                             ) : lastAnswerCorrect ? (
                                 <>
-                                    <h2 className="text-3xl font-bold text-green-300 celebrate">ถูกต้อง!</h2>
-                                    <p className="text-xl mt-2">+{lastPointsEarned.toLocaleString()} คะแนน</p>
+                                    <h2 className="kq-title mt-5 text-success">ถูกต้อง!</h2>
+                                    <p className="mt-2 text-xl font-extrabold">
+                                        +{lastPointsEarned.toLocaleString()} คะแนน
+                                    </p>
                                 </>
                             ) : (
-                                <h2 className="text-3xl font-bold text-red-300">ผิด!</h2>
+                                <h2 className="kq-title mt-5 text-destructive">ผิด!</h2>
                             )}
+
+                            <hr className="kq-divider my-5" />
+
+                            <div className="flex items-center justify-center gap-3">
+                                <span className="kq-badge">RANK</span>
+                                <span className="kq-pixel-lg text-lg text-[var(--arcade)] dark:text-[var(--sunny)]">
+                                    อันดับที่ {myRank}
+                                </span>
+                            </div>
                         </div>
-                    </div>
+
+                        {chosenAnswer ? (
+                            <div
+                                className={`kq-answer pointer-events-none select-none ${getColorClass(
+                                    chosenAnswer.color
+                                )} ${
+                                    lastAnswerCorrect === false
+                                        ? "kq-answer-wrong"
+                                        : lastAnswerCorrect
+                                          ? "kq-answer-correct"
+                                          : "kq-answer-dim"
+                                }`}
+                            >
+                                <span className="kq-answer-shape">
+                                    {ANSWER_LETTERS[chosenIndex] ?? "?"}
+                                </span>
+                                <span className="min-w-0 flex-1 break-words">
+                                    {chosenAnswer.answerText}
+                                </span>
+                            </div>
+                        ) : null}
+                    </main>
                 </div>
             );
         }
 
         return (
-            <div className="min-h-screen game-bg flex flex-col p-4">
-                {/* Timer */}
-                <div className="text-center mb-4">
-                    <div className="w-20 h-20 countdown-circle text-3xl mx-auto">
-                        {timeRemaining}
-                    </div>
-                </div>
+            <div className="flex min-h-dvh flex-col">
+                <PlayerBar nickname={playerNickname ?? "PLAYER"} score={myScore} />
 
-                {/* Answers */}
-                <div className="flex-1 grid grid-cols-2 gap-4 max-w-2xl mx-auto w-full">
-                    {currentQuestion.answers.map((answer) => (
-                        <button
-                            key={answer.id}
-                            onClick={() => handleSelectAnswer(answer.id)}
-                            disabled={hasAnswered || timeRemaining === 0}
-                            className={`answer-btn ${getColorClass(answer.color)} ${selectedAnswer === answer.id ? "ring-4 ring-white scale-95" : ""
-                                } ${hasAnswered || timeRemaining === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pb-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="kq-badge">
+                            ข้อ {gameData.currentQuestionIndex + 1} / {gameData.quiz.questions.length}
+                        </span>
+                        <span
+                            className={`kq-timer ${
+                                timeRemaining <= 5 ? "kq-timer-danger" : ""
+                            }`}
                         >
-                            {answer.answerText}
-                        </button>
-                    ))}
-                </div>
+                            {timeRemaining}
+                        </span>
+                    </div>
+
+                    <h1 className="mt-5 text-xl font-extrabold leading-snug text-[var(--on-arcade)] [text-shadow:2px_2px_0_var(--pop)] sm:text-2xl">
+                        {currentQuestion.questionText}
+                    </h1>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                        {currentQuestion.answers.map((answer, index) => (
+                            <button
+                                key={answer.id}
+                                type="button"
+                                onClick={() => handleSelectAnswer(answer.id)}
+                                disabled={hasAnswered || timeRemaining === 0}
+                                className={`kq-answer ${getColorClass(answer.color)} ${
+                                    timeRemaining === 0 ? "kq-answer-dim" : ""
+                                }`}
+                            >
+                                <span className="kq-answer-shape">
+                                    {ANSWER_LETTERS[index] ?? "?"}
+                                </span>
+                                <span className="min-w-0 flex-1 break-words">
+                                    {answer.answerText}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </main>
             </div>
         );
     }
@@ -456,16 +626,26 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     // SHOWING_ANSWER or LEADERBOARD - Waiting
     if (gameData.status === "SHOWING_ANSWER" || gameData.status === "LEADERBOARD") {
         return (
-            <div className="min-h-screen game-bg flex flex-col items-center justify-center p-4 text-white">
-                <div className="text-center space-y-6">
-                    <Trophy className="w-16 h-16 mx-auto text-yellow-400" />
-                    <h2 className="text-2xl font-bold">ดูหน้าจอหลัก!</h2>
-                    <div className="bg-white/10 backdrop-blur rounded-2xl px-8 py-6">
-                        <p className="text-sm text-white/70 mb-1">คะแนนของคุณ</p>
-                        <p className="text-4xl font-bold">{myScore.toLocaleString()}</p>
-                        <p className="text-white/70 mt-2">อันดับที่ {myRank}</p>
+            <div className="flex min-h-dvh flex-col">
+                <PlayerBar nickname={playerNickname ?? "PLAYER"} score={myScore} />
+
+                <main className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center px-4 py-6">
+                    <div className="kq-card w-full p-7 text-center">
+                        <ArcadeSprite kind="trophy" className="mx-auto size-20 animate-float" />
+
+                        <h2 className="kq-title mt-4">ดูหน้าจอหลัก!</h2>
+
+                        <hr className="kq-divider my-5" />
+
+                        <p className="kq-label text-center">คะแนนของคุณ</p>
+                        <p className="kq-pixel-lg text-4xl text-[var(--arcade)] dark:text-[var(--sunny)]">
+                            {myScore.toLocaleString()}
+                        </p>
+                        <p className="mt-2 text-sm font-bold text-muted-foreground">
+                            อันดับที่ {myRank}
+                        </p>
                     </div>
-                </div>
+                </main>
             </div>
         );
     }
@@ -473,21 +653,37 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     // FINISHED
     if (gameData.status === "FINISHED") {
         return (
-            <div className="min-h-screen game-bg flex flex-col items-center justify-center p-4 text-white">
-                <div className="text-center space-y-6">
-                    <h1 className="text-4xl font-bold">🎉 จบเกม!</h1>
-                    <div className="bg-white/10 backdrop-blur rounded-2xl px-8 py-6">
-                        <p className="text-sm text-white/70 mb-1">คะแนนสุดท้ายของคุณ</p>
-                        <p className="text-5xl font-bold text-yellow-300">{myScore.toLocaleString()}</p>
-                        <p className="text-xl text-white/70 mt-2">อันดับที่ {myRank} จาก {gameData.players.length} คน</p>
+            <div className="flex min-h-dvh flex-col">
+                <PlayerBar nickname={playerNickname ?? "PLAYER"} score={myScore} />
+
+                <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-5 px-4 py-6 text-center">
+                    <ArcadeSprite kind="trophy" className="size-28 animate-float" />
+
+                    <h1 className="kq-title-xl">🎉 จบเกม!</h1>
+
+                    <div className="kq-card w-full p-7">
+                        <p className="kq-label text-center">คะแนนสุดท้ายของคุณ</p>
+                        <p className="kq-pixel-lg text-4xl text-[var(--arcade)] dark:text-[var(--sunny)]">
+                            {myScore.toLocaleString()}
+                        </p>
+                        <p className="mt-2 text-base font-bold text-muted-foreground">
+                            อันดับที่ {myRank} จาก {gameData.players.length} คน
+                        </p>
                     </div>
-                    <Button
+
+                    <button
+                        type="button"
                         onClick={() => router.push("/join")}
-                        className="bg-white text-primary hover:bg-white/90"
+                        className="kq-btn kq-btn-yellow kq-btn-block kq-btn-lg"
                     >
+                        <RotateCcw className="size-5" />
                         เล่นเกมใหม่
-                    </Button>
-                </div>
+                    </button>
+
+                    <Link href="/" className="kq-btn kq-btn-ghost">
+                        กลับหน้าหลัก
+                    </Link>
+                </main>
             </div>
         );
     }

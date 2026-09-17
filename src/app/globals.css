@@ -3,18 +3,36 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ========================================
-   KaQuiz Theme - Inspired by Kahoot
-   ======================================== */
+/* ============================================================
+   KaQuiz — ARCADE EDITION
+   Retro pixel-arcade design system.
+   Squares, thick outlines, hard offset shadows, neon accents.
+   ============================================================ */
 
 @theme inline {
-  /* Base Colors */
+  /* ---------- Fonts ---------- */
+  --font-sans: var(--font-plex);
+  --font-thai: var(--font-plex);
+  --font-pixel: var(--font-press);
+
+  /* ---------- Arcade palette ---------- */
+  --color-arcade: var(--arcade);
+  --color-arcade-deep: var(--arcade-deep);
+  --color-ink: var(--ink);
+  --color-line: var(--line);
+  --color-pop: var(--pop);
+  --color-cream: var(--cream);
+  --color-paper: var(--paper);
+  --color-sunny: var(--sunny);
+  --color-electric: var(--electric);
+  --color-candy: var(--candy);
+  --color-mint: var(--mint);
+  --color-peach: var(--peach);
+  --color-grape: var(--grape);
+
+  /* ---------- shadcn bridge ---------- */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-prompt);
-  --font-mono: var(--font-inter);
-
-  /* Component Colors */
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -28,21 +46,27 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Kahoot Answer Button Colors */
+  /* ---------- Quiz answer colours ---------- */
   --color-answer-red: var(--answer-red);
   --color-answer-blue: var(--answer-blue);
   --color-answer-green: var(--answer-green);
   --color-answer-yellow: var(--answer-yellow);
 
-  /* Success/Correct Color */
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
+  /* ---------- Charts ---------- */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 
-  /* Sidebar Colors */
+  /* ---------- Sidebar ---------- */
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -52,488 +76,1016 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Chart Colors */
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  /* ---------- Square corners, always ---------- */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
 
-  /* Border Radius */
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  /* ---------- Hard offset shadows ---------- */
+  --shadow-hard-sm: var(--sh-sm);
+  --shadow-hard: var(--sh);
+  --shadow-hard-lg: var(--sh-lg);
+  --shadow-hard-xl: var(--sh-xl);
+
+  /* ---------- Animations ---------- */
+  --animate-twinkle: kq-twinkle 2s steps(2) infinite;
+  --animate-wiggle: kq-wiggle 3s steps(4) infinite;
+  --animate-marquee: kq-marquee 26s linear infinite;
+  --animate-bounce-in: kq-bounce-in 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  --animate-shake: kq-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  --animate-pop: kq-pop 0.5s ease-out;
+  --animate-float: kq-float 6s ease-in-out infinite;
+  --animate-spin-slow: spin 3s linear infinite;
+  --animate-slide-up: kq-slide-up 0.4s ease-out both;
 }
 
+/* ============================================================
+   LIGHT — ARCADE DAY
+   ============================================================ */
 :root {
-  /* Base */
-  --radius: 0.75rem;
+  --arcade: #6234dc;
+  --arcade-deep: #211443;
+  --ink: #211543;
+  --line: #211543;
+  --pop: #211543;
+  --cream: #fff4d9;
+  --paper: #fff9e7;
+  --sunny: #ffe14a;
+  --electric: #4ce9f5;
+  --candy: #ff5a98;
+  --mint: #62e6b8;
+  --peach: #ffac6b;
+  --grape: #7048cf;
+  --on-arcade: #fff9ee;
 
-  /* Kahoot Primary Purple: #46178F */
-  --background: #ffffff;
-  --foreground: #1a1a2e;
+  /* hard shadows */
+  --sh-sm: 3px 3px 0 var(--pop);
+  --sh: 5px 5px 0 var(--pop);
+  --sh-lg: 9px 9px 0 var(--pop);
+  --sh-xl: 12px 12px 0 var(--pop);
 
-  /* Card */
-  --card: #ffffff;
-  --card-foreground: #1a1a2e;
+  --background: #fffaf0;
+  --foreground: #211543;
+  --card: #fff9e7;
+  --card-foreground: #211543;
+  --popover: #fff9e7;
+  --popover-foreground: #211543;
+  --primary: #6234dc;
+  --primary-foreground: #fff9e7;
+  --secondary: #ffe14a;
+  --secondary-foreground: #211543;
+  --muted: #f1e6ff;
+  --muted-foreground: #51456f;
+  --accent: #4ce9f5;
+  --accent-foreground: #211543;
+  --destructive: #ff4d7d;
+  --destructive-foreground: #fff9e7;
+  --success: #2fbf75;
+  --success-foreground: #fff9e7;
+  --border: #211543;
+  --input: #211543;
+  --ring: #ff5a98;
 
-  /* Popover */
-  --popover: #ffffff;
-  --popover-foreground: #1a1a2e;
+  /* Quiz answers — arcade bright */
+  --answer-red: #ff5470;
+  --answer-blue: #3f9cf0;
+  --answer-green: #35cc7a;
+  --answer-yellow: #ffb82e;
 
-  /* Primary - Kahoot Purple */
-  --primary: #46178f;
-  --primary-foreground: #ffffff;
+  --chart-1: #6234dc;
+  --chart-2: #ff5a98;
+  --chart-3: #4ce9f5;
+  --chart-4: #62e6b8;
+  --chart-5: #ffe14a;
 
-  /* Secondary */
-  --secondary: #f3f0ff;
-  --secondary-foreground: #46178f;
-
-  /* Muted */
-  --muted: #f5f5f7;
-  --muted-foreground: #6b7280;
-
-  /* Accent */
-  --accent: #864cbf;
-  --accent-foreground: #ffffff;
-
-  /* Destructive */
-  --destructive: #ff3355;
-  --destructive-foreground: #ffffff;
-
-  /* Success */
-  --success: #66bf39;
-  --success-foreground: #ffffff;
-
-  /* Borders & Inputs */
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #46178f;
-
-  /* Kahoot Answer Button Colors */
-  --answer-red: #ff3355;
-  --answer-blue: #45a3e5;
-  --answer-green: #66bf39;
-  --answer-yellow: #eb670f;
-
-  /* Chart Colors */
-  --chart-1: #46178f;
-  --chart-2: #864cbf;
-  --chart-3: #45a3e5;
-  --chart-4: #66bf39;
-  --chart-5: #eb670f;
-
-  /* Sidebar */
-  --sidebar: #46178f;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #46178f;
-  --sidebar-accent: #5a2d9e;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #5a2d9e;
-  --sidebar-ring: #864cbf;
+  --sidebar: #2b1656;
+  --sidebar-foreground: #fff9ee;
+  --sidebar-primary: #ffe14a;
+  --sidebar-primary-foreground: #211543;
+  --sidebar-accent: #3d2172;
+  --sidebar-accent-foreground: #fff9ee;
+  --sidebar-border: #4a2a86;
+  --sidebar-ring: #ff5a98;
 }
 
+/* ============================================================
+   DARK — ARCADE NIGHT
+   ============================================================ */
 .dark {
-  /* Dark Mode - Kahoot Style */
-  --background: #1a1a2e;
-  --foreground: #f5f5f7;
+  --arcade: #211443;
+  --arcade-deep: #140b30;
+  --ink: #ffeccc;
+  --line: #ffe9bf;
+  --pop: #0f082c;
+  --cream: #29204c;
+  --paper: #332858;
+  --on-arcade: #fff5e7;
 
-  /* Card */
-  --card: #2d2d44;
-  --card-foreground: #f5f5f7;
+  --background: #1e1741;
+  --foreground: #fff5e7;
+  --card: #332858;
+  --card-foreground: #fff5e7;
+  --popover: #302451;
+  --popover-foreground: #fff7ef;
+  --primary: #ffe14a;
+  --primary-foreground: #211543;
+  --secondary: #4ce9f5;
+  --secondary-foreground: #211543;
+  --muted: #3a3060;
+  --muted-foreground: #d4c1e9;
+  --accent: #ff5a98;
+  --accent-foreground: #211543;
+  --destructive: #ff5a98;
+  --destructive-foreground: #211543;
+  --success: #62e6b8;
+  --success-foreground: #211543;
+  --border: #ffe9bf;
+  --input: #ffe9bf;
+  --ring: #ffe14a;
 
-  /* Popover */
-  --popover: #2d2d44;
-  --popover-foreground: #f5f5f7;
+  --answer-red: #ff5a98;
+  --answer-blue: #4cc9f5;
+  --answer-green: #4ee6a8;
+  --answer-yellow: #ffd43c;
 
-  /* Primary - Kahoot Purple (lighter for dark mode) */
-  --primary: #864cbf;
-  --primary-foreground: #ffffff;
+  --chart-1: #ffe14a;
+  --chart-2: #ff5a98;
+  --chart-3: #4ce9f5;
+  --chart-4: #62e6b8;
+  --chart-5: #b98cff;
 
-  /* Secondary */
-  --secondary: #3d3d5c;
-  --secondary-foreground: #f5f5f7;
-
-  /* Muted */
-  --muted: #3d3d5c;
-  --muted-foreground: #9ca3af;
-
-  /* Accent */
-  --accent: #46178f;
-  --accent-foreground: #ffffff;
-
-  /* Destructive */
-  --destructive: #ff3355;
-  --destructive-foreground: #ffffff;
-
-  /* Success */
-  --success: #66bf39;
-  --success-foreground: #ffffff;
-
-  /* Borders & Inputs */
-  --border: #3d3d5c;
-  --input: #3d3d5c;
-  --ring: #864cbf;
-
-  /* Kahoot Answer Button Colors - same in dark mode */
-  --answer-red: #ff3355;
-  --answer-blue: #45a3e5;
-  --answer-green: #66bf39;
-  --answer-yellow: #eb670f;
-
-  /* Chart Colors */
-  --chart-1: #864cbf;
-  --chart-2: #46178f;
-  --chart-3: #45a3e5;
-  --chart-4: #66bf39;
-  --chart-5: #eb670f;
-
-  /* Sidebar */
-  --sidebar: #2d2d44;
-  --sidebar-foreground: #f5f5f7;
-  --sidebar-primary: #864cbf;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #3d3d5c;
-  --sidebar-accent-foreground: #f5f5f7;
-  --sidebar-border: #3d3d5c;
-  --sidebar-ring: #864cbf;
+  --sidebar: #1a1038;
+  --sidebar-foreground: #fff5e7;
+  --sidebar-primary: #ffe14a;
+  --sidebar-primary-foreground: #211543;
+  --sidebar-accent: #2c214f;
+  --sidebar-accent-foreground: #fff5e7;
+  --sidebar-border: #ffe9bf;
+  --sidebar-ring: #ffe14a;
 }
 
-/* ========================================
-   Base Layer Styles
-   ======================================== */
-
+/* ============================================================
+   BASE
+   ============================================================ */
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply text-foreground font-thai antialiased;
+    min-width: 320px;
+    background-color: var(--arcade);
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-attachment: fixed;
   }
 
-  /* Custom selection color */
+  .dark body {
+    background-color: var(--arcade-deep);
+    background-image:
+      linear-gradient(rgba(163, 106, 255, 0.09) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(163, 106, 255, 0.09) 1px, transparent 1px);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 700;
+    line-height: 1.35;
+    text-wrap: balance;
+  }
+
+  button,
+  a {
+    touch-action: manipulation;
+  }
+
   ::selection {
-    background-color: var(--primary);
-    color: var(--primary-foreground);
+    background: var(--sunny);
+    color: #211543;
+  }
+
+  :focus-visible {
+    outline: 3px dashed var(--ring);
+    outline-offset: 3px;
+  }
+
+  * {
+    scrollbar-color: var(--grape) transparent;
+    scrollbar-width: thin;
   }
 }
 
-/* ========================================
-   Kahoot-style Answer Buttons
-   ======================================== */
-
+/* ============================================================
+   COMPONENTS
+   ============================================================ */
 @layer components {
-  .answer-btn {
-    @apply flex items-center justify-center font-bold text-white text-lg md:text-xl rounded-lg transition-all duration-200 transform hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] min-h-[80px] md:min-h-[100px] w-full;
+  /* ---------- Layout shell ---------- */
+  .kq-shell {
+    width: min(1180px, calc(100% - 2.5rem));
+    margin-inline: auto;
   }
 
-  .answer-btn-red {
-    background-color: var(--answer-red);
+  .kq-shell-tight {
+    width: min(780px, calc(100% - 2.5rem));
+    margin-inline: auto;
   }
 
-  .answer-btn-blue {
-    background-color: var(--answer-blue);
+  .kq-shell-wide {
+    width: min(1440px, calc(100% - 2.5rem));
+    margin-inline: auto;
   }
 
-  .answer-btn-green {
-    background-color: var(--answer-green);
+  /* ---------- Type ---------- */
+  .kq-pixel {
+    font-family: var(--font-pixel);
+    font-size: 0.62rem;
+    line-height: 1.9;
+    letter-spacing: 0.02em;
   }
 
-  .answer-btn-yellow {
-    background-color: var(--answer-yellow);
+  .kq-pixel-lg {
+    font-family: var(--font-pixel);
+    line-height: 1.7;
+    letter-spacing: 0.02em;
   }
 
-  /* Game PIN Display */
-  .game-pin {
-    @apply font-mono text-4xl md:text-6xl font-bold tracking-widest;
-    color: var(--primary);
+  .kq-overline {
+    font-family: var(--font-pixel);
+    font-size: 0.6rem;
+    line-height: 1.8;
+    letter-spacing: 0.04em;
+    color: var(--grape);
   }
 
-  /* Countdown Timer */
-  .countdown-circle {
-    @apply flex items-center justify-center rounded-full font-bold text-white;
-    background: linear-gradient(135deg, var(--primary), var(--accent));
+  .dark .kq-overline {
+    color: #f5a6fc;
   }
 
-  /* Leaderboard Styles */
-  .leaderboard-item {
-    @apply flex items-center gap-4 p-4 rounded-lg transition-all duration-300;
-    background: linear-gradient(90deg, var(--card), transparent);
+  .kq-title {
+    font-weight: 800;
+    font-size: clamp(1.7rem, 3.4vw, 2.4rem);
+    line-height: 1.3;
+    color: var(--ink);
   }
 
-  .leaderboard-item:nth-child(1) {
-    background: linear-gradient(90deg, rgba(255, 215, 0, 0.2), transparent);
+  .kq-title-xl {
+    font-weight: 800;
+    font-size: clamp(2.1rem, 5vw, 3.6rem);
+    line-height: 1.35;
+    color: var(--on-arcade);
+    text-shadow: 4px 4px 0 var(--pop);
   }
 
-  .leaderboard-item:nth-child(2) {
-    background: linear-gradient(90deg, rgba(192, 192, 192, 0.2), transparent);
+  .kq-subtitle {
+    color: var(--muted-foreground);
+    font-weight: 500;
+    line-height: 1.9;
   }
 
-  .leaderboard-item:nth-child(3) {
-    background: linear-gradient(90deg, rgba(205, 127, 50, 0.2), transparent);
+  .kq-highlight {
+    color: var(--sunny);
+    position: relative;
   }
 
-  /* Question Card */
-  .question-card {
-    @apply bg-white dark:bg-card rounded-2xl shadow-2xl p-8 text-center;
-    background: linear-gradient(135deg, var(--card) 0%, var(--muted) 100%);
+  /* ---------- Topbar ---------- */
+  .kq-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--arcade-deep) 88%, transparent);
+    backdrop-filter: blur(6px);
   }
 
-  /* Gradient Backgrounds */
-  .gradient-kahoot {
-    background: linear-gradient(135deg, #46178f 0%, #864cbf 50%, #a855f7 100%);
+  .dark .kq-topbar {
+    background: color-mix(in srgb, #140b30 88%, transparent);
   }
 
-  .gradient-kahoot-dark {
-    background: linear-gradient(135deg, #1a1a2e 0%, #2d2d44 50%, #46178f 100%);
+  .kq-topbar-rule {
+    height: 3px;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--sunny) 0 20px,
+      transparent 20px 28px,
+      var(--electric) 28px 48px,
+      transparent 48px 56px
+    );
   }
 
-  /* Animated Background for Game */
-  .game-bg {
-    @apply min-h-screen w-full relative overflow-hidden;
-    background: radial-gradient(circle at top right, #2e1065, #000000);
+  .kq-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--on-arcade);
+    font-weight: 800;
+    text-decoration: none;
   }
 
-  /* Animated Blobs */
-  .blob {
-    @apply absolute rounded-full mix-blend-multiply filter blur-3xl opacity-60;
-    animation: blob 7s infinite;
-    background: linear-gradient(135deg, #7c3aed, #db2777);
+  .kq-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    background: var(--sunny);
+    border: 3px solid #211543;
+    box-shadow: 4px 4px 0 #211543;
+    color: #211543;
+    transform: rotate(-5deg);
+    flex: none;
   }
 
-  .blob-1 {
-    top: -10%;
-    left: -10%;
-    width: 50vw;
-    height: 50vw;
-    animation-delay: 0s;
+  .kq-navlink {
+    color: var(--on-arcade);
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 0.35rem 0.25rem;
+    transition: color 0.12s;
   }
 
-  .blob-2 {
-    top: -10%;
-    right: -10%;
-    width: 45vw;
-    height: 45vw;
-    animation-delay: 2s;
-    background: linear-gradient(135deg, #2563eb, #7c3aed);
+  .kq-navlink:hover {
+    color: var(--sunny);
   }
 
-  .blob-3 {
-    bottom: -20%;
-    left: 20%;
-    width: 60vw;
-    height: 60vw;
-    animation-delay: 4s;
-    background: linear-gradient(135deg, #db2777, #ea580c);
+  .kq-navlink-active {
+    color: var(--sunny);
+    border-bottom: 3px solid var(--sunny);
   }
 
-  @keyframes blob {
-    0% {
-      transform: translate(0px, 0px) scale(1);
-    }
-
-    33% {
-      transform: translate(30px, -50px) scale(1.1);
-    }
-
-    66% {
-      transform: translate(-20px, 20px) scale(0.9);
-    }
-
-    100% {
-      transform: translate(0px, 0px) scale(1);
-    }
+  /* ---------- Buttons ---------- */
+  .kq-btn {
+    --kq-bg: var(--paper);
+    --kq-fg: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 48px;
+    padding: 0.7rem 1.3rem;
+    font-family: var(--font-thai);
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    color: var(--kq-fg);
+    background: var(--kq-bg);
+    border: 3px solid var(--line);
+    border-radius: 0;
+    box-shadow: var(--sh);
+    cursor: pointer;
+    user-select: none;
+    transition:
+      transform 0.09s steps(2),
+      box-shadow 0.09s steps(2),
+      background-color 0.12s;
   }
 
-  /* Glassmorphism Card */
-  .glass-card {
-    @apply bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl;
+  .kq-btn:hover:not(:disabled) {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--sh-lg);
   }
 
-  .glass-panel {
-    @apply bg-black/40 backdrop-blur-xl border border-white/10 shadow-lg;
+  .kq-btn:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: var(--sh-sm);
   }
 
-  /* 3D Text */
-  .text-shadow-3d {
-    text-shadow:
-      0 1px 0 #ccc,
-      0 2px 0 #c9c9c9,
-      0 3px 0 #bbb,
-      0 4px 0 #b9b9b9,
-      0 5px 0 #aaa,
-      0 6px 1px rgba(0, 0, 0, .1),
-      0 0 5px rgba(0, 0, 0, .1),
-      0 1px 3px rgba(0, 0, 0, .3),
-      0 3px 5px rgba(0, 0, 0, .2),
-      0 5px 10px rgba(0, 0, 0, .25),
-      0 10px 10px rgba(0, 0, 0, .2),
-      0 20px 20px rgba(0, 0, 0, .15);
+  .kq-btn:disabled,
+  .kq-btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: var(--sh-sm);
+    transform: none;
   }
 
-  .text-neon {
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
+  .kq-btn-sm {
+    min-height: 36px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    box-shadow: var(--sh-sm);
   }
 
-  /* Juicy Button Press */
-  .btn-juicy {
-    @apply transition-all duration-100 ease-in-out active:scale-95;
+  .kq-btn-lg {
+    min-height: 60px;
+    padding: 1rem 1.9rem;
+    font-size: 1.1rem;
   }
 
-  /* Floating Animation */
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
+  .kq-btn-block {
+    width: 100%;
   }
 
-  @keyframes float {
-    0% {
-      transform: translateY(0px);
-    }
-
-    50% {
-      transform: translateY(-20px);
-    }
-
-    100% {
-      transform: translateY(0px);
-    }
+  .kq-btn-yellow {
+    --kq-bg: var(--sunny);
+    --kq-fg: #211543;
+  }
+  .kq-btn-cyan {
+    --kq-bg: var(--electric);
+    --kq-fg: #211543;
+  }
+  .kq-btn-pink {
+    --kq-bg: var(--candy);
+    --kq-fg: #211543;
+  }
+  .kq-btn-mint {
+    --kq-bg: var(--mint);
+    --kq-fg: #211543;
+  }
+  .kq-btn-peach {
+    --kq-bg: var(--peach);
+    --kq-fg: #211543;
+  }
+  .kq-btn-grape {
+    --kq-bg: var(--grape);
+    --kq-fg: #fff9e7;
+  }
+  .kq-btn-purple {
+    --kq-bg: var(--arcade);
+    --kq-fg: #fff9e7;
+  }
+  .kq-btn-paper {
+    --kq-bg: var(--paper);
+    --kq-fg: var(--ink);
+  }
+  .kq-btn-danger {
+    --kq-bg: var(--destructive);
+    --kq-fg: var(--destructive-foreground);
   }
 
-  .animate-bounce-in {
-    animation: bounce-in 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  .kq-btn-ghost {
+    --kq-bg: transparent;
+    --kq-fg: var(--on-arcade);
+    border-color: transparent;
+    box-shadow: none;
   }
 
-  @keyframes bounce-in {
-    0% {
-      opacity: 0;
-      transform: scale(0.3);
-    }
-
-    50% {
-      opacity: 1;
-      transform: scale(1.05);
-    }
-
-    70% {
-      transform: scale(0.9);
-    }
-
-    100% {
-      transform: scale(1);
-    }
+  .kq-btn-ghost:hover:not(:disabled) {
+    --kq-bg: rgba(255, 255, 255, 0.14);
+    transform: none;
+    box-shadow: none;
   }
 
-  /* Pulse animation for waiting state */
-  .pulse-kahoot {
-    animation: pulse-kahoot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* ---------- Surfaces ---------- */
+  .kq-card {
+    background: var(--paper);
+    color: var(--ink);
+    border: 3px solid var(--line);
+    box-shadow: var(--sh);
   }
 
-  @keyframes pulse-kahoot {
-
-    0%,
-    100% {
-      opacity: 1;
-    }
-
-    50% {
-      opacity: 0.7;
-    }
+  .kq-card-flat {
+    background: var(--paper);
+    color: var(--ink);
+    border: 3px solid var(--line);
   }
 
-  /* Shake animation for wrong answer */
-  .shake {
-    animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  .kq-card-hover {
+    transition:
+      transform 0.1s steps(2),
+      box-shadow 0.1s steps(2);
   }
 
-  @keyframes shake {
-
-    10%,
-    90% {
-      transform: translateX(-1px);
-    }
-
-    20%,
-    80% {
-      transform: translateX(2px);
-    }
-
-    30%,
-    50%,
-    70% {
-      transform: translateX(-4px);
-    }
-
-    40%,
-    60% {
-      transform: translateX(4px);
-    }
+  .kq-card-hover:hover {
+    transform: translate(-3px, -3px);
+    box-shadow: var(--sh-lg);
   }
 
-  /* Confetti celebration */
-  .celebrate {
-    animation: celebrate 0.5s ease-out;
+  /* Checkered "art" header used on quiz / stat cards */
+  .kq-art {
+    position: relative;
+    background-color: var(--grape);
+    background-image:
+      linear-gradient(45deg, rgba(255, 255, 255, 0.13) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.13) 75%),
+      linear-gradient(45deg, rgba(255, 255, 255, 0.13) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.13) 75%);
+    background-size: 24px 24px;
+    background-position:
+      0 0,
+      12px 12px;
+    border-bottom: 3px solid var(--line);
   }
 
-  @keyframes celebrate {
-    0% {
-      transform: scale(1);
-    }
-
-    50% {
-      transform: scale(1.1);
-    }
-
-    100% {
-      transform: scale(1);
-    }
+  .kq-dashed-frame {
+    border: 3px dashed color-mix(in srgb, var(--paper) 75%, transparent);
   }
 
-  /* Additional Utilities */
-  .animate-spin-slow {
-    animation: spin 3s linear infinite;
+  /* ---------- Badges & chips ---------- */
+  .kq-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    font-family: var(--font-pixel);
+    font-size: 0.55rem;
+    line-height: 1.6;
+    color: #211543;
+    background: var(--sunny);
+    border: 2px solid #211543;
+    box-shadow: 2px 2px 0 #211543;
+    white-space: nowrap;
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .kq-badge-cyan {
+    background: var(--electric);
+  }
+  .kq-badge-pink {
+    background: var(--candy);
+  }
+  .kq-badge-mint {
+    background: var(--mint);
+  }
+  .kq-badge-peach {
+    background: var(--peach);
+  }
+  .kq-badge-grape {
+    background: var(--grape);
+    color: #fff9e7;
+  }
+  .kq-badge-paper {
+    background: var(--paper);
+    color: #211543;
   }
 
-  .animate-in {
-    animation-duration: 0.7s;
-    animation-fill-mode: both;
+  .kq-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 42px;
+    padding: 0.5rem 1rem;
+    font-family: var(--font-thai);
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #211543;
+    background: var(--paper);
+    border: 3px solid var(--line);
+    box-shadow: var(--sh-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      transform 0.09s steps(2),
+      box-shadow 0.09s steps(2),
+      background-color 0.12s;
   }
 
-  .slide-in-from-bottom {
-    animation-name: slideInFromBottom;
+  .kq-chip:hover {
+    background: var(--electric);
+    transform: translate(-1px, -1px);
   }
 
-  @keyframes slideInFromBottom {
-    from {
-      opacity: 0;
-      transform: translateY(50px);
-    }
-
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  .kq-chip-active {
+    background: var(--candy);
+    box-shadow: var(--sh);
   }
 
-  /* Shimmer animation for indeterminate progress */
-  @keyframes shimmer {
-    0% {
-      transform: translateX(-100%);
-    }
+  /* ---------- Sticker (rotated pixel note) ---------- */
+  .kq-sticker {
+    display: grid;
+    place-items: center;
+    padding: 0.4rem;
+    font-family: var(--font-pixel);
+    font-size: 0.55rem;
+    line-height: 1.8;
+    text-align: center;
+    color: #211543;
+    background: var(--sunny);
+    border: 3px solid #211543;
+    box-shadow: 5px 5px 0 #211543;
+  }
 
-    100% {
-      transform: translateX(300%);
-    }
+  /* ---------- Stats ---------- */
+  .kq-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+
+  .kq-stat-icon {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    color: #211543;
+    background: var(--sunny);
+    border: 3px solid #211543;
+    box-shadow: 3px 3px 0 #211543;
+  }
+
+  .kq-stat-value {
+    font-family: var(--font-pixel);
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--sunny);
+    text-shadow: 2px 2px 0 var(--pop);
+  }
+
+  .kq-stat-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--on-arcade) 82%, transparent);
+  }
+
+  /* ---------- Forms ---------- */
+  .kq-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .kq-input,
+  .kq-textarea,
+  .kq-select {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.6rem 0.9rem;
+    font-family: var(--font-thai);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--paper);
+    border: 3px solid var(--line);
+    border-radius: 0;
+    box-shadow: var(--sh-sm);
+    outline: none;
+    transition:
+      transform 0.09s steps(2),
+      box-shadow 0.09s steps(2),
+      border-color 0.12s;
+  }
+
+  .kq-input::placeholder,
+  .kq-textarea::placeholder {
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  .kq-input:focus,
+  .kq-textarea:focus,
+  .kq-select:focus {
+    transform: translate(-1px, -1px);
+    box-shadow: var(--sh);
+    border-color: var(--ring);
+  }
+
+  .kq-textarea {
+    min-height: 120px;
+    resize: vertical;
+    line-height: 1.8;
+  }
+
+  .kq-error {
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--destructive);
+  }
+
+  /* ---------- Divider ---------- */
+  .kq-divider {
+    border: none;
+    border-top: 3px dashed color-mix(in srgb, var(--line) 45%, transparent);
+  }
+
+  /* ---------- Marquee ---------- */
+  .kq-marquee {
+    overflow: hidden;
+    background: var(--sunny);
+    border-block: 4px solid #211543;
+    box-shadow: 0 6px 0 var(--pop);
+    padding: 0.85rem 0;
+  }
+
+  .kq-marquee-track {
+    display: flex;
+    width: max-content;
+    animation: var(--animate-marquee);
+  }
+
+  .kq-marquee-track > span {
+    padding-inline: 1.2rem;
+    font-family: var(--font-pixel);
+    font-size: 0.6rem;
+    line-height: 1.8;
+    color: #211543;
+    white-space: nowrap;
+  }
+
+  /* ---------- Empty state ---------- */
+  .kq-empty {
+    display: grid;
+    place-items: center;
+    gap: 0.6rem;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    color: var(--ink);
+    background: var(--paper);
+    border: 3px dashed var(--line);
+  }
+
+  /* ---------- Game: answers ---------- */
+  .kq-answer {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    width: 100%;
+    min-height: 88px;
+    padding: 1rem 1.2rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    text-align: left;
+    color: #fff9e7;
+    border: 3px solid #211543;
+    border-radius: 0;
+    box-shadow: 0 7px 0 #211543;
+    cursor: pointer;
+    transition:
+      transform 0.09s steps(2),
+      box-shadow 0.09s steps(2),
+      filter 0.2s,
+      opacity 0.2s;
+  }
+
+  .kq-answer:hover:not(:disabled) {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 0 #211543;
+  }
+
+  .kq-answer:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow: 0 3px 0 #211543;
+  }
+
+  .kq-answer-red {
+    background: var(--answer-red);
+  }
+  .kq-answer-blue {
+    background: var(--answer-blue);
+  }
+  .kq-answer-green {
+    background: var(--answer-green);
+  }
+  .kq-answer-yellow {
+    background: var(--answer-yellow);
+  }
+
+  .kq-answer-dim {
+    opacity: 0.35;
+    filter: grayscale(0.6);
+  }
+
+  .kq-answer-correct {
+    outline: 5px solid var(--sunny);
+    outline-offset: 3px;
+    animation: var(--animate-pop);
+  }
+
+  .kq-answer-wrong {
+    animation: var(--animate-shake);
+  }
+
+  .kq-answer-shape {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    color: #211543;
+    background: rgba(255, 255, 255, 0.85);
+    border: 3px solid #211543;
+  }
+
+  /* ---------- Game: PIN / timer / leaderboard ---------- */
+  .kq-pin {
+    font-family: var(--font-pixel);
+    font-size: clamp(2.2rem, 8vw, 4rem);
+    line-height: 1.4;
+    letter-spacing: 0.12em;
+    color: var(--sunny);
+    text-shadow: 4px 4px 0 var(--pop);
+  }
+
+  .kq-timer {
+    display: grid;
+    place-items: center;
+    width: 84px;
+    height: 84px;
+    font-family: var(--font-pixel);
+    font-size: 1.35rem;
+    color: #211543;
+    background: var(--sunny);
+    border: 4px solid #211543;
+    border-radius: 9999px;
+    box-shadow: var(--sh);
+  }
+
+  .kq-timer-danger {
+    background: var(--candy);
+    animation: var(--animate-pop);
+  }
+
+  .kq-leader-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    background: var(--paper);
+    border: 3px solid var(--line);
+    box-shadow: var(--sh-sm);
+  }
+
+  .kq-rank {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    font-family: var(--font-pixel);
+    font-size: 0.6rem;
+    color: #211543;
+    background: var(--sunny);
+    border: 3px solid #211543;
+  }
+
+  .kq-rank-1 {
+    background: var(--sunny);
+  }
+  .kq-rank-2 {
+    background: var(--electric);
+  }
+  .kq-rank-3 {
+    background: var(--peach);
+  }
+
+  /* ---------- Overlay backdrop for game screens ---------- */
+  .kq-game-bg {
+    position: relative;
+    min-height: 100dvh;
+    background:
+      radial-gradient(circle at 12% 0%, rgba(98, 52, 220, 0.55), transparent 55%),
+      radial-gradient(circle at 88% 100%, rgba(255, 90, 152, 0.35), transparent 55%),
+      var(--arcade-deep);
+  }
+
+  /* ---------- Scroll areas ---------- */
+  .kq-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* ============================================================
+   KEYFRAMES
+   ============================================================ */
+@keyframes kq-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(15deg);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8) rotate(15deg);
+  }
+}
+
+@keyframes kq-wiggle {
+  0%,
+  100% {
+    transform: rotate(-13deg);
+  }
+  50% {
+    transform: rotate(-6deg);
+  }
+}
+
+@keyframes kq-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes kq-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+@keyframes kq-bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes kq-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes kq-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes kq-shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================================
+   RESPONSIVE / MOTION
+   ============================================================ */
+@media (max-width: 768px) {
+  .kq-shell,
+  .kq-shell-tight,
+  .kq-shell-wide {
+    width: calc(100% - 1.75rem);
+  }
+
+  .kq-title-xl {
+    text-shadow: 3px 3px 0 var(--pop);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .kq-marquee-track {
+    animation: none !important;
   }
 }

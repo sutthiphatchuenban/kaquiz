@@ -4,13 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth-store";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { PageHeading } from "@/components/page-heading";
+import { EmptyState } from "@/components/empty-state";
 import {
-    Sparkles,
-    ArrowLeft,
     BarChart3,
     Users,
     FileQuestion,
@@ -83,117 +80,140 @@ export default function ReportsPage() {
     const getStatusBadge = (status: string) => {
         switch (status) {
             case "FINISHED":
-                return <Badge variant="default" className="bg-green-500">เสร็จสิ้น</Badge>;
+                return <span className="kq-badge kq-badge-mint">เสร็จสิ้น</span>;
             case "LOBBY":
-                return <Badge variant="secondary">รอผู้เล่น</Badge>;
+                return <span className="kq-badge kq-badge-cyan">รอผู้เล่น</span>;
             case "PLAYING":
             case "QUESTION":
-                return <Badge variant="default" className="bg-blue-500">กำลังเล่น</Badge>;
+                return <span className="kq-badge kq-badge-peach">กำลังเล่น</span>;
             default:
-                return <Badge variant="outline">{status}</Badge>;
+                return <span className="kq-badge kq-badge-paper">{status}</span>;
         }
     };
 
+    const summaryStats = [
+        {
+            icon: BarChart3,
+            value: sessions.length,
+            label: "เกมทั้งหมด",
+            tint: "bg-[var(--sunny)]",
+        },
+        {
+            icon: Users,
+            value: sessions.reduce((sum, s) => sum + s._count.players, 0),
+            label: "ผู้เล่นรวม",
+            tint: "bg-[var(--electric)]",
+        },
+        {
+            icon: Trophy,
+            value: sessions.filter((s) => s.status === "FINISHED").length,
+            label: "เกมที่จบแล้ว",
+            tint: "bg-[var(--candy)]",
+        },
+    ];
+
     if (authLoading) {
         return (
-            <div className="min-h-screen bg-background">
-                <div className="container mx-auto px-4 py-8">
-                    <Skeleton className="h-8 w-48 mb-8" />
-                    <div className="space-y-4">
-                        {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-24" />
-                        ))}
-                    </div>
+            <div>
+                <Skeleton className="h-10 w-56" />
+                <div className="mt-8 space-y-4">
+                    {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-24" />
+                    ))}
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Navigation */}
-            <nav className="border-b bg-card sticky top-0 z-50">
-                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                    <Link href="/dashboard" className="flex items-center gap-2">
-                        <img src="/favicon.ico" alt="KaQuiz" className="w-10 h-10 rounded-xl object-contain" />
-                        <span className="text-xl font-bold tracking-tight">KaQuiz</span>
-                    </Link>
+        <>
+            <PageHeading
+                overline="03 / GAME HISTORY"
+                title="รายงาน"
+                description="ดูประวัติการเล่นและสถิติของทุกเกมที่คุณจัด"
+            />
+
+            <div className="grid gap-5 sm:grid-cols-3">
+                {summaryStats.map(({ icon: Icon, value, label, tint }) => (
+                    <div key={label} className="kq-card flex items-center gap-4 bg-arcade p-5">
+                        <span className={`kq-stat-icon ${tint}`}>
+                            <Icon className="size-5" strokeWidth={2.5} />
+                        </span>
+                        <span className="min-w-0">
+                            <span className="kq-stat-value block text-2xl">{value}</span>
+                            <span className="kq-stat-label block truncate">{label}</span>
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            {isLoading ? (
+                <div className="mt-8 space-y-4">
+                    {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-24" />
+                    ))}
                 </div>
-            </nav>
-
-            {/* Main Content */}
-            <main className="container mx-auto px-4 py-8">
-                <Link href="/dashboard" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
-                    <ArrowLeft className="w-4 h-4" />
-                    กลับไปหน้า Dashboard
-                </Link>
-
-                <div className="flex items-center gap-3 mb-8">
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <BarChart3 className="w-6 h-6 text-primary" />
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-bold">รายงาน</h1>
-                        <p className="text-muted-foreground">ดูประวัติการเล่นและสถิติ</p>
-                    </div>
-                </div>
-
-                {isLoading ? (
-                    <div className="space-y-4">
-                        {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-24" />
-                        ))}
-                    </div>
-                ) : sessions.length === 0 ? (
-                    <Card className="border-dashed">
-                        <CardContent className="flex flex-col items-center justify-center py-16">
-                            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                                <BarChart3 className="w-8 h-8 text-muted-foreground" />
-                            </div>
-                            <h3 className="text-lg font-medium mb-2">ยังไม่มีรายงาน</h3>
-                            <p className="text-muted-foreground mb-4 text-center">
-                                เริ่มจัดเกมเพื่อดูรายงานการเล่น
-                            </p>
-                            <Link href="/quizzes">
-                                <Button>ไปที่ Quiz ของฉัน</Button>
+            ) : sessions.length === 0 ? (
+                <div className="mt-8">
+                    <EmptyState
+                        title="ยังไม่มีรายงาน"
+                        description="เริ่มจัดเกมเพื่อดูรายงานการเล่น"
+                        icon={<BarChart3 className="size-8 text-ink" />}
+                        action={
+                            <Link href="/quizzes" className="kq-btn kq-btn-yellow">
+                                ไปที่ Quiz ของฉัน
                             </Link>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <div className="space-y-4">
+                        }
+                    />
+                </div>
+            ) : (
+                <>
+                    <div className="mb-4 mt-10 flex items-center gap-3">
+                        <h2 className="kq-overline whitespace-nowrap">SESSION LOG</h2>
+                        <hr className="kq-divider flex-1" />
+                    </div>
+
+                    <div className="grid gap-4">
                         {sessions.map((session) => (
-                            <Card key={session.id} className="hover:shadow-md transition-shadow">
-                                <CardHeader className="pb-3">
-                                    <div className="flex items-start justify-between">
-                                        <div>
-                                            <CardTitle className="text-lg flex items-center gap-2">
-                                                <FileQuestion className="w-5 h-5 text-muted-foreground" />
-                                                {session.quiz.title}
-                                            </CardTitle>
-                                            <CardDescription className="flex items-center gap-4 mt-2">
-                                                <span className="flex items-center gap-1">
-                                                    <Clock className="w-4 h-4" />
-                                                    {formatDate(session.createdAt)}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                    <Users className="w-4 h-4" />
-                                                    {session._count.players} ผู้เล่น
-                                                </span>
-                                                <span className="font-mono text-sm">
-                                                    PIN: {session.pin}
-                                                </span>
-                                            </CardDescription>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            {getStatusBadge(session.status)}
+                            <article
+                                key={session.id}
+                                className="kq-card kq-card-hover flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                                <div className="flex min-w-0 items-start gap-4">
+                                    <span className="kq-stat-icon shrink-0 bg-grape">
+                                        <FileQuestion
+                                            className="size-5 text-[var(--on-arcade)]"
+                                            strokeWidth={2.5}
+                                        />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <h3 className="truncate text-lg font-bold text-ink">
+                                            {session.quiz.title}
+                                        </h3>
+                                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-bold text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="size-3.5" />
+                                                {formatDate(session.createdAt)}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Users className="size-3.5" />
+                                                {session._count.players} ผู้เล่น
+                                            </span>
+                                            <span className="kq-badge kq-badge-paper">
+                                                PIN: {session.pin}
+                                            </span>
                                         </div>
                                     </div>
-                                </CardHeader>
-                            </Card>
+                                </div>
+
+                                <div className="shrink-0">
+                                    {getStatusBadge(session.status)}
+                                </div>
+                            </article>
                         ))}
                     </div>
-                )}
-            </main>
-        </div>
+                </>
+            )}
+        </>
     );
 }

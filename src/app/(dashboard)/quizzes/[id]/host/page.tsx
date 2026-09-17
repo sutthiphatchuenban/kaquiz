@@ -3,7 +3,9 @@
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
-import { Loader2 } from "lucide-react";
+import { PageHeading } from "@/components/page-heading";
+import { ArcadeSprite } from "@/components/arcade-sprite";
+import { Gamepad2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function StartHostPage({ params }: { params: Promise<{ id: string }> }) {
@@ -53,9 +55,57 @@ export default function StartHostPage({ params }: { params: Promise<{ id: string
     };
 
     return (
-        <div className="min-h-screen game-bg flex flex-col items-center justify-center text-white">
-            <Loader2 className="w-16 h-16 animate-spin mb-4" />
-            <h1 className="text-2xl font-bold">กำลังสร้างเกม...</h1>
+        <div className="kq-shell-tight">
+            <PageHeading
+                overline="HOST / LIVE ROOM"
+                title="กำลังเปิดห้องเกม..."
+                description="ระบบกำลังเตรียมห้อง PIN ของคุณ อีกสักครู่จะพาไปหน้าจอโฮสต์ให้อัตโนมัติ"
+            />
+
+            <div className="kq-card relative p-6 text-center sm:p-10">
+                <span className="kq-sticker absolute -top-4 right-6 z-10 rotate-[7deg] px-3 py-2">
+                    GET
+                    <br />
+                    READY!
+                </span>
+
+                <div className="grid place-items-center gap-5">
+                    <span className="grid size-24 place-items-center border-[3px] border-line bg-[var(--arcade-deep)] shadow-hard">
+                        <ArcadeSprite
+                            kind="bot"
+                            className="size-16 animate-float"
+                            title="หุ่นยนต์พิกเซล KaQuiz"
+                        />
+                    </span>
+
+                    <p className="kq-pixel text-[9px] text-[var(--candy)]">LOADING ROOM...</p>
+
+                    <div>
+                        <h2 className="text-xl font-bold text-ink">กำลังสร้างเกม...</h2>
+                        <p className="mt-2 text-sm font-medium leading-loose text-muted-foreground">
+                            เก็บ PIN ไว้แชร์ให้ทุกคนในห้อง แล้วเริ่มแข่งกันได้เลย
+                        </p>
+                    </div>
+
+                    {isCreating ? (
+                        <div className="flex items-center gap-3">
+                            <Loader2 className="size-6 animate-spin text-[var(--arcade)]" />
+                            <span className="text-sm font-bold text-ink">
+                                กำลังสร้างห้องและรหัส PIN
+                            </span>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={createGameSession}
+                            className="kq-btn kq-btn-yellow kq-btn-lg"
+                        >
+                            <Gamepad2 className="size-5" />
+                            เปิดห้องโฮสต์
+                        </button>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

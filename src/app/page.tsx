@@ -1,20 +1,107 @@
 "use client";
 
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Sparkles,
-  Zap,
-  Users,
-  Trophy,
-  Play,
-  ChevronRight,
-  Gamepad2,
-} from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import {
+  BarChart3,
+  ChevronRight,
+  Gamepad2,
+  ImageIcon,
+  Pencil,
+  Sparkles,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
+
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { Marquee } from "@/components/marquee";
+import { ArcadeSprite } from "@/components/arcade-sprite";
+import { HashLink } from "@/components/hash-link";
+
+const HERO_STATS = [
+  { icon: Sparkles, value: "AI", label: "สร้างข้อสอบจากหัวข้อ" },
+  { icon: Users, value: "∞", label: "ผู้เล่นพร้อมกันแบบไม่จำกัด" },
+  { icon: Trophy, value: "LIVE", label: "คะแนนอัปเดตทันที" },
+];
+
+const FEATURES = [
+  {
+    n: "01",
+    color: "#ff89b2",
+    icon: Sparkles,
+    badge: "AI",
+    label: "SMART MODE",
+    title: "ร่างข้อสอบให้ในคลิกเดียว",
+    desc: "พิมพ์หัวข้อที่อยากสอน ระบบจะช่วยคิดคำถามและตัวเลือกให้ก่อนนำไปปรับต่อ",
+  },
+  {
+    n: "02",
+    color: "#79def1",
+    icon: Pencil,
+    badge: "MANUAL",
+    label: "FULL CONTROL",
+    title: "แก้ได้ทุกตัวอักษร",
+    desc: "สลับข้อถูก เพิ่มคำอธิบาย ตั้งเวลา และกำหนดคะแนนได้เองแบบละเอียด",
+  },
+  {
+    n: "03",
+    color: "#ffd25d",
+    icon: Zap,
+    badge: "LIVE",
+    label: "REALTIME",
+    title: "เล่นสดพร้อมกันทั้งห้อง",
+    desc: "แชร์ PIN 6 หลักให้ทุกคน แล้วเริ่มเกมพร้อมกันได้ในไม่กี่วินาที",
+  },
+  {
+    n: "04",
+    color: "#a9e5ac",
+    icon: Trophy,
+    badge: "RANK",
+    label: "SCOREBOARD",
+    title: "ตารางคะแนนขยับทันที",
+    desc: "ทุกคำตอบถูกนับแบบเรียลไทม์ พร้อมจัดอันดับผู้เล่นให้ลุ้นกันทุกข้อ",
+  },
+  {
+    n: "05",
+    color: "#c5a5f2",
+    icon: BarChart3,
+    badge: "REPORT",
+    label: "AFTER GAME",
+    title: "ย้อนดูผลย้อนหลัง",
+    desc: "ดูประวัติเกมที่จัดไปแล้ว จำนวนผู้เล่น และคะแนนเฉลี่ยของแต่ละรอบ",
+  },
+  {
+    n: "06",
+    color: "#ffb878",
+    icon: ImageIcon,
+    badge: "MEDIA",
+    label: "VISUAL",
+    title: "ใส่รูปให้คำถาม",
+    desc: "อัปโหลดรูปประกอบได้เลย เหมาะกับคำถามภาพหรือโจทย์ที่ต้องดูรายละเอียด",
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "สร้าง Quiz",
+    desc: "เริ่มจากหัวข้อ หรือไล่พิมพ์คำถามเองก็ได้ ไม่ต้องมีพื้นฐานอะไรก็ทำได้",
+  },
+  {
+    n: "02",
+    title: "เปิดห้อง แชร์ PIN",
+    desc: "กดโฮสต์แล้วแชร์รหัส 6 หลักบนจอ ทุกคนเข้าเล่นได้จากมือถือ",
+  },
+  {
+    n: "03",
+    title: "แข่งกัน แล้วดูผล",
+    desc: "ตอบให้ไวที่สุดเพื่อเก็บแต้ม พร้อมดูอันดับและรายงานหลังเกมจบ",
+  },
+];
 
 export default function Home() {
   const [gamePin, setGamePin] = useState("");
@@ -28,558 +115,344 @@ export default function Home() {
     router.push(`/join?pin=${gamePin}`);
   };
 
-  const features = [
-    { icon: Zap, label: "AI ช่วยสร้าง", color: "#f59e0b" },
-    { icon: Users, label: "เล่นพร้อมกัน", color: "#06b6d4" },
-    { icon: Trophy, label: "Leaderboard", color: "#10b981" },
-  ];
-
   return (
-    <div className="lp-root">
-      {/* ── Animated background ── */}
-      <div className="lp-bg" aria-hidden="true">
-        <div className="lp-orb lp-orb-1" />
-        <div className="lp-orb lp-orb-2" />
-        <div className="lp-orb lp-orb-3" />
-        <div className="lp-grid" />
-      </div>
+    <div className="min-h-dvh">
+      <SiteHeader />
 
-      {/* ── Nav ── */}
-      <header className="lp-nav">
-        <Link href="/" className="lp-logo">
-          <img src="/favicon.ico" alt="KaQuiz" className="w-8 h-8 rounded-lg object-contain" />
-          <span className="lp-logo-text">KaQuiz</span>
-        </Link>
-        <div className="lp-nav-actions">
-          <Link href="/login">
-            <Button variant="ghost" className="lp-btn-ghost">เข้าสู่ระบบ</Button>
-          </Link>
-          <Link href="/register">
-            <Button className="lp-btn-primary">เริ่มต้นฟรี</Button>
-          </Link>
-        </div>
-      </header>
+      <main>
+        {/* ================= HERO ================= */}
+        <section className="relative pb-24 pt-14">
+          <span
+            aria-hidden
+            className="kq-pixel animate-twinkle pointer-events-none absolute left-[54%] top-6 hidden text-[35px] text-[var(--sunny)] lg:block"
+          >
+            ✦
+          </span>
+          <span
+            aria-hidden
+            className="kq-pixel pointer-events-none absolute right-10 top-52 hidden text-[26px] text-[var(--electric)] lg:block"
+          >
+            ✳
+          </span>
 
-      {/* ── Main: split layout ── */}
-      <main className="lp-main">
-        {/* Left panel */}
-        <section className="lp-left">
-          <div className="lp-badge">
-            <Gamepad2 className="w-3.5 h-3.5" />
-            <span>Next-Gen Quiz Platform</span>
-          </div>
+          <div className="kq-shell grid items-center gap-14 lg:grid-cols-2">
+            {/* ---- Copy ---- */}
+            <div className="animate-slide-up">
+              <span className="inline-flex items-center gap-2 border-[3px] border-line bg-[var(--electric)] px-3.5 py-2.5 shadow-[5px_5px_0_var(--pop)]">
+                <span className="size-2.5 animate-pulse rounded-full bg-[#ff407c] ring-[3px] ring-white/70" />
+                <span className="kq-pixel text-[9px] text-[#211543]">
+                  WELCOME TO THE QUIZ ARCADE
+                </span>
+              </span>
 
-          <h1 className="lp-headline">
-            ให้การเรียนรู้
-            <br />
-            <span className="lp-headline-accent">เป็นเรื่องสนุก!</span>
-          </h1>
+              <h1 className="kq-title-xl mt-8">
+                เปลี่ยนทุกคำถาม
+                <br />
+                ให้เป็น <span className="text-[var(--sunny)]">เกมโชว์</span>
+                <br />
+                ที่ทั้งห้องพร้อมเล่น <span aria-hidden>✳</span>
+              </h1>
 
-          <p className="lp-subtext">
-            สร้าง Quiz สุดพรีเมียม, จัดเกมสดแบบ Real-time
-            และพาทุกคนเข้าสู่โลกแห่งการแข่งขันสุดมันส์
-          </p>
+              <p className="mt-6 max-w-lg text-[15px] font-medium leading-loose text-[#f2e6ff]">
+                สร้าง quiz ของคุณเอง แล้วชวนเพื่อน เพื่อนร่วมงาน หรือนักเรียน
+                มาแข่งกันตอบแบบสด ๆ ใครไวและแม่นที่สุด ขึ้นแท่นอันดับ 1 บนจอ
+              </p>
 
-          {/* Feature pills */}
-          <div className="lp-features">
-            {features.map(({ icon: Icon, label, color }) => (
-              <div key={label} className="lp-feature-pill">
-                <div className="lp-feature-icon" style={{ background: color + "22", color }}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <span>{label}</span>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/register" className="kq-btn kq-btn-yellow">
+                  เริ่มต้นฟรี
+                  <ChevronRight className="size-4" />
+                </Link>
+                <HashLink href="#join" block="center" className="kq-btn kq-btn-pink">
+                  <Gamepad2 className="size-4" />
+                  เข้าร่วมด้วย PIN
+                </HashLink>
               </div>
-            ))}
-          </div>
 
-          <Link href="/register">
-            <Button className="lp-cta-btn">
-              สร้าง Quiz ของคุณเลย
-              <ChevronRight className="w-5 h-5 ml-1" />
-            </Button>
-          </Link>
-        </section>
-
-        {/* Right panel – Join card */}
-        <section className="lp-right">
-          <div className="lp-card">
-            {/* Glow ring */}
-            <div className="lp-card-glow" aria-hidden="true" />
-
-            <div className="lp-card-icon-wrap">
-              <div className="lp-card-icon">
-                <Play className="w-9 h-9 text-white fill-white" />
-              </div>
-            </div>
-
-            <h2 className="lp-card-title">พร้อมเล่นหรือยัง?</h2>
-            <p className="lp-card-desc">กรอก Game PIN จากหน้าจอ Host</p>
-
-            <div className="lp-pin-wrap">
-              <Input
-                type="text"
-                inputMode="numeric"
-                placeholder="000000"
-                value={gamePin}
-                onChange={(e) =>
-                  setGamePin(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                className="lp-pin-input"
-                maxLength={6}
-              />
-              {/* PIN dots indicator */}
-              <div className="lp-pin-dots">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="lp-pin-dot"
-                    data-filled={i < gamePin.length ? "true" : "false"}
-                  />
+              <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
+                {HERO_STATS.map(({ icon: Icon, value, label }, i) => (
+                  <div key={label} className="flex items-center gap-6">
+                    {i > 0 ? (
+                      <span className="hidden h-10 w-[2px] bg-[#bb9fff]/60 sm:block" />
+                    ) : null}
+                    <div className="kq-stat">
+                      <span className="kq-stat-icon">
+                        <Icon className="size-5" strokeWidth={2.5} />
+                      </span>
+                      <span>
+                        <span className="kq-stat-value block">{value}</span>
+                        <span className="kq-stat-label block">{label}</span>
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
 
-            <Button
-              onClick={handleJoinGame}
-              className="lp-join-btn"
-              disabled={gamePin.length !== 6}
-            >
-              กระโดดเข้าสู่เกม!
-              <ChevronRight className="w-5 h-5 ml-1" />
-            </Button>
+            {/* ---- Arcade cabinet ---- */}
+            <div className="relative mx-auto w-full max-w-md">
+              <span className="kq-sticker absolute -right-3 -top-5 z-10 rotate-[9deg] px-3 py-2">
+                NEW! ✦
+              </span>
+              <span className="kq-sticker animate-wiggle absolute -left-4 top-28 z-10 rotate-[-13deg] px-3 py-3">
+                100%
+                <br />
+                FUN!
+              </span>
 
-            <p className="lp-card-hint">
-              ไม่มี PIN? ขอจาก Host ของคุณ
-            </p>
+              <div className="border-4 border-line bg-[var(--grape)] shadow-hard-xl">
+                {/* title bar */}
+                <div className="flex h-12 items-center justify-between border-b-4 border-line bg-[var(--sunny)] px-3.5">
+                  <span className="kq-pixel text-[9px] text-[#211543]">♥ KAQUIZ.EXE</span>
+                  <span className="flex gap-1.5" aria-hidden>
+                    <i className="size-3 border-[3px] border-[#211543] bg-[var(--candy)]" />
+                    <i className="size-3 border-[3px] border-[#211543] bg-[var(--electric)]" />
+                    <i className="size-3 border-[3px] border-[#211543] bg-[var(--mint)]" />
+                  </span>
+                </div>
+
+                {/* screen */}
+                <div
+                  className="relative grid h-[330px] place-items-center overflow-hidden bg-[var(--arcade-deep)]"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(rgba(255,255,255,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.09) 1px, transparent 1px)",
+                    backgroundSize: "24px 24px",
+                  }}
+                >
+                  <span className="kq-pixel animate-twinkle absolute right-6 top-6 text-lg text-[var(--sunny)]" aria-hidden>
+                    ✦
+                  </span>
+                  <span className="kq-pixel animate-twinkle absolute bottom-24 left-7 text-base text-[var(--candy)]" aria-hidden>
+                    ✳
+                  </span>
+
+                  <span className="absolute left-4 top-5 border-[3px] border-[#211543] bg-[var(--paper)] px-3 py-2 text-sm font-bold text-[#211543] shadow-[5px_5px_0_#211543]">
+                    PRESS START! ♡
+                  </span>
+
+                  <ArcadeSprite
+                    className="size-44 drop-shadow-[6px_6px_0_rgba(0,0,0,0.35)]"
+                    title="หุ่นยนต์พิกเซล KaQuiz"
+                  />
+
+                  <div className="absolute inset-x-3.5 bottom-3.5 flex items-center justify-between gap-2">
+                    <span className="kq-badge">LV.01 • READY</span>
+                    <span className="kq-badge kq-badge-cyan">HOST → /host/[pin]</span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                aria-hidden
+                className="absolute -bottom-4 left-5 right-5 h-4 border-4 border-line bg-[var(--candy)]"
+              />
+            </div>
+          </div>
+        </section>
+
+        <Marquee
+          items={[
+            "QUIZ ARCADE",
+            "PRESS START",
+            "BEAT THE CLOCK",
+            "TOP THE LEADERBOARD",
+            "PLAY TOGETHER",
+          ]}
+        />
+
+        {/* ================= FEATURES ================= */}
+        <section id="features" className="scroll-mt-28 bg-[var(--cream)] py-20">
+          <div className="kq-shell">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="kq-overline">01 / WHAT&apos;S INSIDE</p>
+                <h2 className="kq-title mt-2">ในนี้มีอะไรให้เล่นบ้าง 🎮</h2>
+              </div>
+              <p className="max-w-sm text-sm font-semibold text-[#564765] dark:text-[var(--muted-foreground)]">
+                ทุกอย่างที่ต้องใช้จัดเกม quiz ให้สนุก อยู่ครบในที่เดียว
+              </p>
+            </div>
+
+            <div className="mt-10 grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map((f) => {
+                const Icon = f.icon;
+                return (
+                  <article key={f.n} className="kq-card kq-card-hover flex flex-col">
+                    <div
+                      className="kq-art relative grid h-44 place-items-center"
+                      style={{ backgroundColor: f.color }}
+                    >
+                      <span className="kq-badge absolute left-3 top-3">{f.n}</span>
+                      <span className="grid size-28 rotate-[4deg] place-items-center border-4 border-dashed border-white/75">
+                        <Icon className="size-12 text-[#211543]" strokeWidth={2.4} />
+                      </span>
+                    </div>
+
+                    <div className="flex flex-1 flex-col gap-3 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="text-xl font-bold">{f.title}</h3>
+                        <span className="kq-badge kq-badge-paper">{f.badge}</span>
+                      </div>
+                      <p className="flex-1 text-sm font-medium text-muted-foreground">
+                        {f.desc}
+                      </p>
+                      <div className="flex items-center justify-between border-t-2 border-dashed border-line/30 pt-3">
+                        <span className="kq-pixel text-[8px] text-[var(--candy)]">
+                          ✳ {f.label}
+                        </span>
+                        <Link
+                          href="/register"
+                          className="kq-pixel text-[8px] font-bold text-[#6234dc] hover:underline dark:text-[var(--sunny)]"
+                        >
+                          ลองใช้ ↗
+                        </Link>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* ================= HOW TO PLAY ================= */}
+        <section id="how" className="scroll-mt-28 py-20">
+          <div className="kq-shell">
+            <div className="max-w-2xl">
+              <p className="kq-overline text-[var(--electric)]">02 / HOW TO PLAY</p>
+              <h2 className="kq-title-xl mt-2 text-[clamp(1.8rem,3.6vw,2.5rem)]">
+                แค่ 3 ขั้นตอน ก็เริ่มเกมได้
+              </h2>
+              <p className="mt-4 text-sm font-medium leading-loose text-[#f2e6ff]">
+                ไม่ต้องติดตั้งอะไรเพิ่ม เปิดเบราว์เซอร์แล้วเล่นได้เลยทั้งฝั่งคนจัดและคนเล่น
+              </p>
+            </div>
+
+            <div className="mt-10 grid gap-7 md:grid-cols-3">
+              {STEPS.map((s, i) => (
+                <article key={s.n} className="kq-card kq-card-hover p-6">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`grid size-14 place-items-center border-[3px] border-[#211543] font-bold text-[#211543] shadow-[4px_4px_0_#211543] ${
+                        ["bg-[var(--sunny)]", "bg-[var(--electric)]", "bg-[var(--mint)]"][i]
+                      }`}
+                    >
+                      <span className="kq-pixel text-[11px]">{s.n}</span>
+                    </span>
+                    <span aria-hidden className="kq-pixel text-lg text-[var(--candy)]">
+                      ✦
+                    </span>
+                  </div>
+                  <h3 className="mt-5 text-xl font-bold">{s.title}</h3>
+                  <p className="mt-2 text-sm font-medium leading-relaxed text-muted-foreground">
+                    {s.desc}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ================= JOIN / BONUS STAGE ================= */}
+        <section id="join" className="scroll-mt-28 pb-10 pt-4">
+          <div className="kq-shell">
+            <div className="relative border-4 border-line bg-[var(--mint)] shadow-hard-xl dark:bg-[#1f5f5c]">
+              <span className="kq-sticker absolute -top-6 left-6 z-10 px-3 py-2">
+                BONUS STAGE ✦
+              </span>
+
+              <div className="grid items-center gap-10 p-8 pt-12 md:grid-cols-[1.1fr_1fr] md:p-12">
+                <div>
+                  <p className="kq-overline text-[#20514a] dark:text-[var(--electric)]">
+                    03 / JOIN THE GAME
+                  </p>
+                  <h2 className="mt-3 text-[clamp(1.7rem,3.4vw,2.35rem)] font-extrabold leading-snug text-[#211543]">
+                    มี PIN อยู่ในมือแล้ว?
+                    <br />
+                    กระโดดเข้าห้องได้เลย
+                  </h2>
+                  <p className="mt-4 max-w-md text-sm font-semibold leading-loose text-[#26483e] dark:text-[#d9fff3]">
+                    กรอกรหัส 6 หลักที่เห็นบนจอโฮสต์ แล้วตั้งชื่อเล่นของคุณ
+                    พร้อมแข่งกับทุกคนในห้อง
+                  </p>
+
+                  <div className="mt-7">
+                    <label htmlFor="join-pin" className="kq-label text-[#211543]">
+                      Game PIN
+                    </label>
+                    <input
+                      id="join-pin"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      placeholder="000000"
+                      value={gamePin}
+                      onChange={(e) =>
+                        setGamePin(e.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleJoinGame();
+                      }}
+                      className="kq-input kq-pixel-lg h-16 border-[#211543] text-center text-2xl tracking-[0.35em]"
+                      aria-label="กรอก Game PIN 6 หลัก"
+                    />
+
+                    <div className="mt-3 flex justify-center gap-2" aria-hidden>
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <span
+                          key={i}
+                          className={`h-2 w-6 border-2 border-[#211543] ${
+                            i < gamePin.length ? "bg-[#211543]" : "bg-transparent"
+                          }`}
+                        />
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleJoinGame}
+                      disabled={gamePin.length !== 6}
+                      className="kq-btn kq-btn-yellow kq-btn-block kq-btn-lg mt-5"
+                    >
+                      กระโดดเข้าสู่เกม
+                      <ChevronRight className="size-5" />
+                    </button>
+                    <p className="mt-3 text-center text-xs font-bold text-[#26483e] dark:text-[#d9fff3]">
+                      ยังไม่มี PIN? ขอจากคนที่เปิดห้องอยู่ได้เลย
+                    </p>
+                  </div>
+                </div>
+
+                {/* decorative arcade panel */}
+                <div className="relative mx-auto hidden w-full max-w-xs md:block">
+                  <div className="border-4 border-[#211543] bg-[var(--arcade-deep)] p-5 shadow-hard-lg">
+                    <div className="grid place-items-center gap-4">
+                      <ArcadeSprite kind="trophy" className="size-28" title="ถ้วยรางวัลพิกเซล" />
+                      <span className="kq-pixel text-center text-[9px] leading-[2] text-[var(--sunny)]">
+                        TOP SCORE
+                        <br />
+                        <span className="text-[var(--on-arcade)]">PLAYER 01</span>
+                      </span>
+                      <div className="grid w-full grid-cols-3 gap-2" aria-hidden>
+                        <span className="h-3 bg-[var(--candy)]" />
+                        <span className="h-3 bg-[var(--electric)]" />
+                        <span className="h-3 bg-[var(--sunny)]" />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="kq-sticker absolute -bottom-4 -right-3 rotate-[7deg] px-3 py-2">
+                    GO! GO!
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
 
-      {/* ── Footer strip ── */}
-      <footer className="lp-footer">
-        <span>© 2026 KaQuiz · Made with ❤️ in Thailand</span>
-        <div className="lp-footer-links">
-          <Link href="#">ความเป็นส่วนตัว</Link>
-          <Link href="#">ติดต่อเรา</Link>
-        </div>
-      </footer>
-
-      <style>{`
-        /* ──────────────────────────────────────
-           KaQuiz Landing Page – Viewport-fit
-        ────────────────────────────────────── */
-
-        .lp-root {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          width: 100%;
-          height: 100dvh;
-          overflow: hidden;
-          background: #09090f;
-          color: #fff;
-          font-family: 'Inter', system-ui, sans-serif;
-        }
-
-        /* ── Background ── */
-        .lp-bg {
-          position: absolute;
-          inset: 0;
-          z-index: 0;
-          overflow: hidden;
-        }
-        .lp-orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(80px);
-          animation: lp-drift 10s ease-in-out infinite alternate;
-        }
-        .lp-orb-1 {
-          width: 520px; height: 520px;
-          top: -180px; left: -120px;
-          background: radial-gradient(circle, #7c3aed55, #4f46e522);
-          animation-delay: 0s;
-        }
-        .lp-orb-2 {
-          width: 400px; height: 400px;
-          top: -120px; right: -80px;
-          background: radial-gradient(circle, #db277755, #f59e0b22);
-          animation-delay: 3s;
-        }
-        .lp-orb-3 {
-          width: 350px; height: 350px;
-          bottom: -100px; left: 35%;
-          background: radial-gradient(circle, #0ea5e944, #7c3aed22);
-          animation-delay: 6s;
-        }
-        @keyframes lp-drift {
-          from { transform: translate(0, 0) scale(1); }
-          to   { transform: translate(30px, 20px) scale(1.08); }
-        }
-        .lp-grid {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-          background-size: 40px 40px;
-        }
-
-        /* ── Nav ── */
-        .lp-nav {
-          position: relative;
-          z-index: 10;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 2.5rem;
-          height: 64px;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
-          backdrop-filter: blur(12px);
-          flex-shrink: 0;
-        }
-        .lp-logo {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          text-decoration: none;
-        }
-        .lp-logo-icon {
-          width: 36px; height: 36px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #ec4899, #8b5cf6);
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 0 20px #8b5cf640;
-        }
-        .lp-logo-text {
-          font-size: 1.3rem;
-          font-weight: 900;
-          letter-spacing: -0.03em;
-          background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-        .lp-nav-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .lp-btn-ghost {
-          color: rgba(255,255,255,0.7) !important;
-          background: transparent !important;
-          border: none !important;
-        }
-        .lp-btn-ghost:hover {
-          color: #fff !important;
-          background: rgba(255,255,255,0.08) !important;
-        }
-        .lp-btn-primary {
-          background: linear-gradient(135deg, #ec4899, #8b5cf6) !important;
-          border: none !important;
-          font-weight: 700;
-          border-radius: 10px !important;
-          box-shadow: 0 4px 20px #8b5cf630;
-        }
-        .lp-btn-primary:hover {
-          opacity: 0.9;
-          transform: translateY(-1px);
-        }
-
-        /* ── Main split layout ── */
-        .lp-main {
-          position: relative;
-          z-index: 10;
-          flex: 1;
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 0;
-          overflow: hidden;
-          min-height: 0;
-        }
-
-        /* ── Left panel ── */
-        .lp-left {
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          padding: 3rem 4rem 3rem 4rem;
-          gap: 1.5rem;
-        }
-        .lp-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 5px 14px;
-          border-radius: 999px;
-          background: rgba(139,92,246,0.15);
-          border: 1px solid rgba(139,92,246,0.3);
-          color: #a78bfa;
-          font-size: 0.78rem;
-          font-weight: 600;
-          letter-spacing: 0.02em;
-          width: fit-content;
-        }
-        .lp-headline {
-          font-size: clamp(2.2rem, 4vw, 3.5rem);
-          font-weight: 900;
-          line-height: 1.1;
-          letter-spacing: -0.03em;
-          margin: 0;
-        }
-        .lp-headline-accent {
-          background: linear-gradient(90deg, #facc15, #f97316, #ec4899);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-        .lp-subtext {
-          font-size: 1rem;
-          line-height: 1.7;
-          color: rgba(255,255,255,0.55);
-          max-width: 440px;
-          margin: 0;
-        }
-        .lp-features {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-        .lp-feature-pill {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 7px 14px 7px 8px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          font-size: 0.82rem;
-          font-weight: 600;
-          color: rgba(255,255,255,0.75);
-        }
-        .lp-feature-icon {
-          width: 26px; height: 26px;
-          border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .lp-cta-btn {
-          background: #fff !important;
-          color: #1e0a3c !important;
-          font-size: 1rem !important;
-          font-weight: 800 !important;
-          padding: 0 2rem !important;
-          height: 52px !important;
-          border-radius: 14px !important;
-          border: none !important;
-          box-shadow: 0 8px 30px rgba(255,255,255,0.12);
-          width: fit-content;
-          display: inline-flex;
-          align-items: center;
-          transition: transform 0.15s, box-shadow 0.15s;
-        }
-        .lp-cta-btn:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 40px rgba(255,255,255,0.18);
-        }
-
-        /* ── Divider ── */
-        .lp-main::before {
-          content: '';
-          position: absolute;
-          left: 50%;
-          top: 10%;
-          bottom: 10%;
-          width: 1px;
-          background: linear-gradient(to bottom,
-            transparent,
-            rgba(255,255,255,0.08) 30%,
-            rgba(255,255,255,0.08) 70%,
-            transparent
-          );
-        }
-
-        /* ── Right panel ── */
-        .lp-right {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 2rem;
-        }
-        .lp-card {
-          position: relative;
-          width: 100%;
-          max-width: 380px;
-          background: rgba(255,255,255,0.04);
-          backdrop-filter: blur(24px);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 28px;
-          padding: 2.5rem 2rem 2rem;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 1.25rem;
-          box-shadow:
-            0 32px 64px rgba(0,0,0,0.4),
-            0 0 0 1px rgba(255,255,255,0.05) inset;
-          animation: lp-card-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
-        }
-        @keyframes lp-card-in {
-          from { opacity: 0; transform: translateY(24px) scale(0.96); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        .lp-card-glow {
-          position: absolute;
-          top: -1px; left: 50%;
-          transform: translateX(-50%);
-          width: 60%;
-          height: 2px;
-          background: linear-gradient(90deg, transparent, #06b6d4, #8b5cf6, transparent);
-          border-radius: 2px;
-        }
-        .lp-card-icon-wrap {
-          position: relative;
-        }
-        .lp-card-icon-wrap::before {
-          content: '';
-          position: absolute;
-          inset: -8px;
-          border-radius: 50%;
-          background: radial-gradient(circle, #06b6d440, transparent 70%);
-        }
-        .lp-card-icon {
-          width: 72px; height: 72px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #06b6d4, #3b82f6);
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 8px 32px #06b6d440;
-          animation: lp-float 4s ease-in-out infinite;
-        }
-        @keyframes lp-float {
-          0%, 100% { transform: translateY(0); }
-          50%       { transform: translateY(-6px); }
-        }
-        .lp-card-title {
-          font-size: 1.5rem;
-          font-weight: 900;
-          letter-spacing: -0.02em;
-          margin: 0;
-          text-align: center;
-        }
-        .lp-card-desc {
-          font-size: 0.875rem;
-          color: rgba(255,255,255,0.45);
-          margin: -0.5rem 0 0;
-          text-align: center;
-        }
-        .lp-pin-wrap {
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 10px;
-        }
-        .lp-pin-input {
-          width: 100% !important;
-          height: 72px !important;
-          text-align: center !important;
-          font-size: 2.5rem !important;
-          font-weight: 900 !important;
-          font-family: 'Courier New', monospace !important;
-          letter-spacing: 0.4em !important;
-          background: rgba(0,0,0,0.4) !important;
-          border: 1.5px solid rgba(255,255,255,0.1) !important;
-          border-radius: 16px !important;
-          color: #fff !important;
-          transition: border-color 0.2s;
-        }
-        .lp-pin-input::placeholder {
-          color: rgba(255,255,255,0.15) !important;
-        }
-        .lp-pin-input:focus {
-          border-color: #06b6d4 !important;
-          box-shadow: 0 0 0 3px rgba(6,182,212,0.15) !important;
-          outline: none !important;
-        }
-        .lp-pin-dots {
-          display: flex;
-          gap: 6px;
-        }
-        .lp-pin-dot {
-          width: 7px; height: 7px;
-          border-radius: 50%;
-          background: rgba(255,255,255,0.15);
-          transition: background 0.2s, transform 0.2s;
-        }
-        .lp-pin-dot[data-filled="true"] {
-          background: #06b6d4;
-          transform: scale(1.2);
-        }
-        .lp-join-btn {
-          width: 100% !important;
-          height: 54px !important;
-          font-size: 1.05rem !important;
-          font-weight: 800 !important;
-          border-radius: 14px !important;
-          border: none !important;
-          background: linear-gradient(135deg, #06b6d4, #3b82f6) !important;
-          box-shadow: 0 8px 24px rgba(6,182,212,0.35) !important;
-          transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s !important;
-          display: inline-flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-        }
-        .lp-join-btn:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 32px rgba(6,182,212,0.45) !important;
-        }
-        .lp-join-btn:disabled {
-          opacity: 0.4 !important;
-        }
-        .lp-card-hint {
-          font-size: 0.75rem;
-          color: rgba(255,255,255,0.28);
-          margin: -0.5rem 0 0;
-          text-align: center;
-        }
-
-        /* ── Footer ── */
-        .lp-footer {
-          position: relative;
-          z-index: 10;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0 2.5rem;
-          height: 44px;
-          border-top: 1px solid rgba(255,255,255,0.05);
-          font-size: 0.72rem;
-          color: rgba(255,255,255,0.25);
-          flex-shrink: 0;
-        }
-        .lp-footer-links {
-          display: flex;
-          gap: 1.5rem;
-        }
-        .lp-footer-links a {
-          color: rgba(255,255,255,0.25);
-          text-decoration: none;
-          transition: color 0.2s;
-        }
-        .lp-footer-links a:hover {
-          color: rgba(255,255,255,0.6);
-        }
-
-        /* ── Responsive (tablet/mobile) ── */
-        @media (max-width: 768px) {
-          .lp-root { height: auto; min-height: 100dvh; overflow: auto; }
-          .lp-main { grid-template-columns: 1fr; }
-          .lp-main::before { display: none; }
-          .lp-left { padding: 2.5rem 1.5rem 1.5rem; align-items: center; text-align: center; }
-          .lp-subtext { text-align: center; }
-          .lp-features { justify-content: center; }
-          .lp-right { padding: 1rem 1.5rem 2rem; }
-          .lp-card { max-width: 100%; }
-          .lp-footer { flex-direction: column; gap: 4px; height: auto; padding: 12px; }
-        }
-      `}</style>
+      <SiteFooter />
     </div>
   );
 }

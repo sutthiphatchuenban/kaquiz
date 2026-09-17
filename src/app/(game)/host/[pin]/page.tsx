@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth-store";
 import { useSocket } from "@/hooks/use-socket";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ArcadeSprite } from "@/components/arcade-sprite";
 import {
-    Sparkles,
+    ArrowLeft,
     Users,
     Play,
     ChevronRight,
@@ -31,13 +29,21 @@ import { audioSynth } from "@/utils/audio-synth";
 // Utility for coloring
 const getColorClass = (color: string) => {
     const colors: Record<string, string> = {
-        red: "bg-[var(--answer-red)] shadow-[0_6px_0_var(--destructive)]",
-        blue: "bg-[var(--answer-blue)] shadow-[0_6px_0_#2b87d1]",
-        green: "bg-[var(--answer-green)] shadow-[0_6px_0_#4aa523]",
-        yellow: "bg-[var(--answer-yellow)] shadow-[0_6px_0_#d95600]",
+        red: "kq-answer-red",
+        blue: "kq-answer-blue",
+        green: "kq-answer-green",
+        yellow: "kq-answer-yellow",
     };
     return colors[color] || colors.red;
 };
+
+// Light tints used by the lobby player wall
+const PLAYER_TINTS = [
+    "var(--sunny)",
+    "var(--electric)",
+    "var(--mint)",
+    "var(--peach)",
+];
 
 interface Answer {
     id: string;
@@ -57,6 +63,7 @@ interface Question {
 }
 
 interface Quiz {
+    id: string;
     title: string;
     questions: Question[];
 }
@@ -72,6 +79,7 @@ interface GameData {
     currentQuestionIndex: number;
     quiz: Quiz;
     players: Player[];
+    startedAt: string | null;
 }
 
 export default function HostGamePage({ params }: { params: Promise<{ pin: string }> }) {
@@ -95,9 +103,11 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     const [isLoading, setIsLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
     const isUpdatingRef = useRef(false); // ref version to avoid stale closure
+    const lastUpdateRef = useRef<number>(Date.now());
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [answeredCount, setAnsweredCount] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
+    const [isMusicOn, setIsMusicOn] = useState(true);
 
     // Sound Management
     const playSound = useCallback((type: "lobby" | "countdown" | "question" | "reveal" | "win" | "join", loop = false) => {
@@ -129,6 +139,18 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     const toggleMute = () => {
         setIsMuted(!isMuted);
         audioSynth.toggleMute(!isMuted);
+    };
+
+    const toggleMusic = () => {
+        const next = !isMusicOn;
+        setIsMusicOn(next);
+        if (!next) {
+            audioSynth.stopBGM();
+        } else if (gameData?.status === "LOBBY") {
+            playSound("lobby");
+        } else if (gameData?.status === "QUESTION") {
+            playSound("question");
+        }
     };
 
     useEffect(() => {
@@ -196,7 +218,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         }
     }, [isAuthenticated, pin]);
 
-    // ── Timer (ref-based to avoid stale closure) ─────────────────────────
+    // ── Timer (synced with server startedAt) ─────────────────────────────
     const handleShowAnswerTimerRef = useRef<() => void>(() => { });
     useEffect(() => {
         handleShowAnswerTimerRef.current = () => {
@@ -206,25 +228,39 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         };
     });
 
+    // Compute timeRemaining from server startedAt for accuracy
+    const computedTimeRemaining = useCallback(() => {
+        if (gameData?.status !== "QUESTION" || !gameData?.startedAt) return 0;
+        const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
+        if (!currentQuestion) return 0;
+        const elapsed = Math.floor((Date.now() - new Date(gameData.startedAt).getTime()) / 1000);
+        return Math.max(0, currentQuestion.timeLimit - elapsed);
+    }, [gameData?.status, gameData?.startedAt, gameData?.currentQuestionIndex, gameData?.quiz?.questions]);
+
+    // Keep local timeRemaining in sync for display
     useEffect(() => {
-        if (gameData?.status !== "QUESTION" || timeRemaining <= 0) return;
+        if (gameData?.status !== "QUESTION") return;
+        setTimeRemaining(computedTimeRemaining());
+    }, [gameData?.status, gameData?.startedAt, gameData?.currentQuestionIndex, computedTimeRemaining]);
 
-        const timer = setInterval(() => {
-            setTimeRemaining((prev) => {
-                if (prev <= 1) {
-                    handleShowAnswerTimerRef.current();
-                    return 0;
-                }
-                if (prev <= 5) audioSynth.playCountdown();
-                return prev - 1;
-            });
+    // Tick every second to update the countdown display
+    useEffect(() => {
+        if (gameData?.status !== "QUESTION") return;
+        const tick = setInterval(() => {
+            setTimerTick((t) => t + 1);
+            const remaining = computedTimeRemaining();
+            setTimeRemaining(remaining);
+            if (remaining <= 5 && remaining > 0) audioSynth.playCountdown();
+            if (remaining <= 0) {
+                handleShowAnswerTimerRef.current();
+            }
         }, 1000);
-
-        return () => clearInterval(timer);
-    }, [gameData?.status, timeRemaining]);
+        return () => clearInterval(tick);
+    }, [gameData?.status, gameData?.startedAt, gameData?.currentQuestionIndex, computedTimeRemaining]);
 
     const [isAutoPlay, setIsAutoPlay] = useState(true);
     const [joinUrl, setJoinUrl] = useState("");
+    const [timerTick, setTimerTick] = useState(0);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -290,18 +326,29 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     }, [gameData?.status, playSound]);
 
     const fetchGame = async () => {
+        const fetchTime = Date.now();
         try {
             const res = await fetch(`/api/games/${pin}/host`);
             const data = await res.json();
 
             if (data.success) {
+                if (isUpdatingRef.current) return;
+                // Ignore if a manual update happened AFTER this fetch started
+                if (lastUpdateRef.current > fetchTime) return;
+
                 setGameData(data.data);
-                
+            
                 // --- ADDED FOR POLLING (Without WebSockets) ---
                 if (data.data.status === "QUESTION") {
                     const currentQ = data.data.quiz.questions[data.data.currentQuestionIndex];
                     if (currentQ?.playerAnswers) {
-                        setAnsweredCount(currentQ.playerAnswers.length);
+                        // Only count answers from players currently in THIS session
+                        // (playerAnswers includes answers from ALL past sessions using this question)
+                        const currentPlayerIds = new Set(data.data.players.map((p: Player) => p.id));
+                        const sessionAnswers = currentQ.playerAnswers.filter(
+                            (pa: { playerId: string }) => currentPlayerIds.has(pa.playerId)
+                        );
+                        setAnsweredCount(sessionAnswers.length);
                     }
                 }
             } else {
@@ -331,6 +378,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
             const data = await res.json();
 
             if (data.success) {
+                lastUpdateRef.current = Date.now();
                 setGameData(data.data);
                 return true;
             } else {
@@ -408,10 +456,21 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         }
     };
 
+    const handleEndGame = async () => {
+        const success = await updateGameStatus("FINISHED");
+        if (success) {
+            socketEndGame(pin);
+        }
+    };
+
     if (authLoading || isLoading) {
         return (
-            <div className="min-h-screen game-bg flex items-center justify-center">
-                <Loader2 className="w-16 h-16 animate-spin text-white drop-shadow-lg" />
+            <div className="kq-game-bg grid min-h-dvh place-items-center">
+                <div className="grid place-items-center gap-5 text-center">
+                    <Loader2 className="size-16 animate-spin text-[var(--sunny)]" />
+                    <p className="kq-pixel text-[var(--sunny)]">LOADING...</p>
+                    <p className="text-sm font-semibold text-[#f2e6ff]">กำลังโหลดห้องเกม...</p>
+                </div>
             </div>
         );
     }
@@ -419,378 +478,618 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     if (!gameData) return null;
 
     const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
+    const answerLetters = ["A", "B", "C", "D"];
+    const answerGlyphs = ["▲", "◆", "●", "■"];
 
     return (
-        <div className="min-h-screen game-bg text-white font-sans overflow-hidden relative">
-            {/* Background Blobs */}
-            <div className="blob blob-1"></div>
-            <div className="blob blob-2"></div>
-            <div className="blob blob-3"></div>
-            <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] opacity-10 mix-blend-overlay"></div>
+        <div className="kq-game-bg text-[var(--on-arcade)]">
+            {/* Faint arcade floor grid */}
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 opacity-[0.12]"
+                style={{
+                    backgroundImage:
+                        "linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px)",
+                    backgroundSize: "52px 52px",
+                }}
+            />
 
-            {/* Audio Control - only show during active game, not in LOBBY */}
-            {gameData.status !== "LOBBY" && (
-                <div className="fixed bottom-6 left-6 z-50 flex gap-4">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsAutoPlay(!isAutoPlay)}
-                        className={`glass-panel rounded-full w-12 h-12 transition-all ${isAutoPlay ? 'bg-green-500/50 text-white' : 'text-white/50 hover:bg-white/20'}`}
-                        title={isAutoPlay ? "Auto Play ON" : "Auto Play OFF"}
-                    >
-                        {isAutoPlay ? <Play className="w-6 h-6 animate-pulse" /> : <Play className="w-6 h-6 opacity-50" />}
-                    </Button>
+            {/* ── Audio controls ─────────────────────────────────────────── */}
+            <div className="fixed bottom-5 left-5 z-50 flex items-center gap-2 border-[3px] border-line bg-[var(--paper)] p-2 shadow-hard">
+                <span className="kq-pixel hidden px-1 text-[8px] text-[#211543] sm:block">
+                    AUDIO
+                </span>
+                <button
+                    type="button"
+                    onClick={() => setIsAutoPlay(!isAutoPlay)}
+                    aria-label={isAutoPlay ? "ปิดโหมดเล่นอัตโนมัติ" : "เปิดโหมดเล่นอัตโนมัติ"}
+                    aria-pressed={isAutoPlay}
+                    title={isAutoPlay ? "Auto Play ON" : "Auto Play OFF"}
+                    className={`kq-btn kq-btn-sm ${isAutoPlay ? "kq-btn-mint" : "kq-btn-paper"}`}
+                >
+                    <Play className="size-4" />
+                </button>
+                <button
+                    type="button"
+                    onClick={toggleMute}
+                    aria-label={isMuted ? "เปิดเสียง" : "ปิดเสียง"}
+                    aria-pressed={isMuted}
+                    title={isMuted ? "เปิดเสียง" : "ปิดเสียง"}
+                    className="kq-btn kq-btn-sm kq-btn-paper"
+                >
+                    {isMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+                </button>
+                <button
+                    type="button"
+                    onClick={toggleMusic}
+                    aria-label={isMusicOn ? "ปิดเพลงประกอบ" : "เปิดเพลงประกอบ"}
+                    aria-pressed={isMusicOn}
+                    title={isMusicOn ? "ปิดเพลงประกอบ" : "เปิดเพลงประกอบ"}
+                    className={`kq-btn kq-btn-sm ${isMusicOn ? "kq-btn-cyan" : "kq-btn-paper"}`}
+                >
+                    <Music className="size-4" />
+                </button>
+            </div>
 
-                    <Button variant="ghost" size="icon" onClick={toggleMute} className="text-white hover:bg-white/20 glass-panel rounded-full w-12 h-12">
-                        {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
-                    </Button>
-                </div>
-            )}
-
-            {/* LOBBY */}
+            {/* ════════════════════ LOBBY ════════════════════ */}
             {gameData.status === "LOBBY" && (
-                <div className="h-screen w-full flex flex-col relative z-10 overflow-hidden">
-                    {/* Top Bar: Title */}
-                    <div className="flex-shrink-0 w-full px-6 pt-4 pb-2">
-                        <div className="glass-card rounded-2xl px-6 py-3 relative overflow-hidden max-w-4xl mx-auto text-center">
-                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500"></div>
-                            <h1 className="text-xl sm:text-2xl md:text-4xl font-black tracking-tight drop-shadow-xl break-words line-clamp-1">
-                                {gameData.quiz.title}
-                            </h1>
-                            <p className="text-sm md:text-base text-white/80 font-light mt-1">
-                                เข้าร่วมที่ <span className="font-mono font-bold text-cyan-300 bg-black/30 px-2 py-0.5 rounded-lg border border-cyan-500/30 inline-block">{joinUrl || `${typeof window !== 'undefined' ? window.location.host : ''}/join`}</span>
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Middle: 2-column layout */}
-                    <div className="flex-1 flex min-h-0 gap-4 px-6 py-3">
-                        {/* Left: QR + PIN */}
-                        <div className="flex flex-col items-center justify-center gap-4 flex-shrink-0 w-auto">
-                            {/* QR Code */}
-                            {joinUrl && (
-                                <div className="bg-white p-2 rounded-xl shadow-2xl rotate-[-2deg] hover:rotate-0 transition-transform duration-300">
-                                    <img
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`}
-                                        alt="Join QR Code"
-                                        className="w-36 h-36 md:w-44 md:h-44"
-                                    />
-                                </div>
-                            )}
-                            {/* PIN Box */}
-                            <div className="bg-white text-black px-6 py-4 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative rotate-[1deg] hover:rotate-0 transition-transform duration-300 text-center">
-                                <span className="absolute -top-2.5 -right-2.5 rotate-12 bg-yellow-400 text-black font-bold px-2 py-0.5 rounded-lg shadow-lg text-xs">JOIN NOW!</span>
-                                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-0.5">Game PIN</p>
-                                <p className="text-4xl md:text-6xl font-black tracking-widest font-mono text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-purple-700">
-                                    {pin}
+                <div className="relative z-10 flex min-h-dvh flex-col">
+                    <header className="kq-shell-wide flex flex-wrap items-center justify-between gap-4 pt-6">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="kq-brand-mark">
+                                <ArcadeSprite kind="bot" className="size-7" />
+                            </span>
+                            <div className="min-w-0">
+                                <p className="kq-overline text-[var(--electric)]">
+                                    KAQUIZ • LIVE ROOM
                                 </p>
+                                <h1 className="truncate text-[clamp(1.3rem,2.6vw,2.1rem)] font-extrabold text-[var(--on-arcade)]">
+                                    {gameData.quiz.title}
+                                </h1>
                             </div>
                         </div>
+                        <span className="kq-badge kq-badge-cyan text-[10px]">LOBBY</span>
+                    </header>
 
-                        {/* Right: Player list */}
-                        <div className="flex-1 flex flex-col min-h-0 glass-card rounded-2xl p-3">
-                            <p className="text-xs uppercase font-bold tracking-widest text-white/50 mb-2 flex-shrink-0 flex items-center gap-2">
-                                <Users className="w-3 h-3" /> ผู้เล่น ({gameData.players.length})
-                            </p>
-                            <div className="flex-1 overflow-y-auto min-h-0">
-                                <div className="flex flex-wrap content-start gap-2">
-                                    {gameData.players.map((player) => (
-                                        <div key={player.id} className="animate-in fade-in zoom-in duration-300">
-                                            <Badge className="text-sm py-1.5 px-3 bg-black/40 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg text-white rounded-lg transition-all hover:-translate-y-1 max-w-[160px] truncate">
-                                                <div className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse flex-shrink-0"></div>
-                                                {player.nickname}
-                                            </Badge>
-                                        </div>
-                                    ))}
-                                    {gameData.players.length === 0 && (
-                                        <div className="flex flex-col items-center justify-center opacity-60 animate-pulse w-full py-8">
-                                            <Loader2 className="w-8 h-8 mb-2 animate-spin" />
-                                            <p className="text-base font-medium">Waiting for players...</p>
-                                        </div>
-                                    )}
+                    <div className="kq-shell-wide grid flex-1 content-start gap-6 py-6 lg:grid-cols-2">
+                        {/* ── PIN hero + join instructions ── */}
+                        <div className="flex flex-col gap-6">
+                            <section className="relative border-4 border-line bg-[var(--arcade-deep)] px-6 py-9 text-center shadow-hard-xl">
+                                <span className="kq-sticker absolute -top-5 right-6 z-10 rotate-[8deg] px-3 py-2">
+                                    JOIN NOW!
+                                </span>
+                                <p className="kq-pixel text-[10px] text-[var(--electric)]">
+                                    GAME PIN
+                                </p>
+                                <p className="kq-pin mt-2 text-[clamp(3rem,10vw,6.5rem)]">{pin}</p>
+                                <p className="mt-4 text-sm font-semibold leading-relaxed text-[#f2e6ff] sm:text-base">
+                                    เปิด KaQuiz บนมือถือ แล้วกรอกรหัสนี้เพื่อเข้าเล่น
+                                </p>
+                            </section>
+
+                            <section className="kq-card p-5 sm:p-6">
+                                <div className="flex items-center gap-3">
+                                    <span className="grid size-11 flex-none place-items-center border-[3px] border-line bg-[var(--electric)] text-[#211543] shadow-hard-sm">
+                                        <Users className="size-5" strokeWidth={2.5} />
+                                    </span>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-ink">วิธีเข้าร่วม</h2>
+                                        <p className="kq-pixel mt-0.5 text-[7px] text-muted-foreground">
+                                            HOW TO JOIN
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
+
+                                <ol className="mt-5 grid gap-3">
+                                    {[
+                                        { n: "01", text: "เปิดเว็บ KaQuiz บนมือถือ" },
+                                        { n: "02", text: "กรอก Game PIN 6 หลักที่เห็นบนจอ" },
+                                        { n: "03", text: "ตั้งชื่อเล่น แล้วรอสัญญาณเริ่มเกม" },
+                                    ].map((step) => (
+                                        <li key={step.n} className="flex items-center gap-3">
+                                            <span className="grid size-9 flex-none place-items-center border-[3px] border-line bg-[var(--sunny)] shadow-hard-sm">
+                                                <span className="kq-pixel text-[8px] text-[#211543]">
+                                                    {step.n}
+                                                </span>
+                                            </span>
+                                            <span className="text-sm font-bold text-ink">
+                                                {step.text}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ol>
+
+                                {joinUrl ? (
+                                    <div className="mt-5 flex items-center gap-4 border-[3px] border-line bg-[var(--cream)] p-3">
+                                        <img
+                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`}
+                                            alt="QR Code สำหรับเข้าร่วมเกม"
+                                            className="size-24 flex-none border-[3px] border-line bg-[var(--paper)] lg:size-32"
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="kq-pixel text-[8px] text-[#211543]">
+                                                SCAN ME
+                                            </p>
+                                            <p className="mt-1 break-all text-xs font-bold text-[#564765]">
+                                                {joinUrl}
+                                            </p>
+                                            <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                                                สแกนด้วยกล้องมือถือเพื่อเข้าห้องทันที
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </section>
                         </div>
-                    </div>
 
-                    {/* Footer */}
-                    <div className="flex-shrink-0 w-full glass-panel border-t border-white/10 flex items-center justify-between px-6 py-3 backdrop-blur-xl z-20">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-white/10 p-2 rounded-full">
-                                <Users className="w-5 h-5" />
-                            </div>
-                            <div className="text-left leading-tight">
-                                <p className="text-[10px] text-white/60 uppercase font-bold tracking-wider">Players</p>
-                                <span className="text-xl font-black">{gameData.players.length}</span>
-                            </div>
-                        </div>
-
-                        <Button
-                            size="lg"
-                            onClick={handleStartGame}
-                            disabled={gameData.players.length === 0 || isUpdating}
-                            className="h-12 px-8 md:px-12 text-lg md:text-xl font-black rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white shadow-[0_0_30px_rgba(168,85,247,0.4)] border-none btn-juicy"
-                        >
-                            {isUpdating ? <Loader2 className="w-5 h-5 animate-spin" /> : "START GAME"}
-                        </Button>
-                    </div>
-                </div>
-            )}
-
-            {/* QUESTION */}
-            {/* QUESTION */}
-            {gameData.status === "QUESTION" && currentQuestion && (
-                <div className="h-screen flex flex-col p-4 md:p-6 pb-20 relative z-10 overflow-hidden">
-                    {/* Header */}
-                    <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                        <Badge variant="outline" className="text-base md:text-lg bg-black/30 border-white/20 text-white px-4 py-2 backdrop-blur-md rounded-xl">
-                            <span className="opacity-60 mr-2 hidden sm:inline">Question</span>
-                            <span className="font-bold text-lg md:text-xl">{gameData.currentQuestionIndex + 1}</span>
-                            <span className="opacity-60 mx-1 md:mx-2">/</span>
-                            <span className="opacity-60">{gameData.quiz.questions.length}</span>
-                        </Badge>
-
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-purple-500 blur-xl opacity-40 animate-pulse"></div>
-                            <div className="bg-black/40 backdrop-blur-md rounded-full w-16 h-16 md:w-20 md:h-20 flex items-center justify-center border-4 border-white/10 shadow-2xl relative z-10">
-                                <span className={`text-2xl md:text-4xl font-black font-mono ${timeRemaining <= 5 ? "text-red-400 animate-pulse scale-110 transition-transform" : "text-white"}`}>
-                                    {timeRemaining}
+                        {/* ── Live player wall ── */}
+                        <section className="kq-card flex min-h-[26rem] flex-col">
+                            <div className="flex items-center justify-between gap-3 p-5 pb-4">
+                                <div className="flex items-center gap-3">
+                                    <span className="grid size-11 flex-none place-items-center border-[3px] border-line bg-[var(--candy)] text-[#211543] shadow-hard-sm">
+                                        <Users className="size-5" strokeWidth={2.5} />
+                                    </span>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-ink">ผู้เล่นในห้อง</h2>
+                                        <p className="kq-pixel mt-0.5 text-[7px] text-muted-foreground">
+                                            PLAYERS JOINED
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className="kq-badge kq-badge-pink text-[10px]">
+                                    {gameData.players.length} คน
                                 </span>
                             </div>
-                        </div>
+
+                            <hr className="kq-divider mx-5" />
+
+                            <div className="kq-scroll min-h-0 flex-1 p-5">
+                                {gameData.players.length > 0 ? (
+                                    <div className="flex flex-wrap content-start gap-2.5">
+                                        {gameData.players.map((player, i) => (
+                                            <span
+                                                key={player.id}
+                                                className="kq-chip pointer-events-none animate-bounce-in cursor-default text-base"
+                                                style={{
+                                                    backgroundColor:
+                                                        PLAYER_TINTS[i % PLAYER_TINTS.length],
+                                                }}
+                                            >
+                                                <span className="size-2.5 flex-none rounded-full bg-[#211543]" />
+                                                {player.nickname}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="grid h-full place-items-center gap-4 text-center">
+                                        <ArcadeSprite kind="bot" className="size-28 animate-float" />
+                                        <div>
+                                            <p className="text-lg font-bold text-ink">
+                                                รอผู้เล่นเข้าร่วม...
+                                            </p>
+                                            <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                                                แชร์ PIN {pin} ให้ทุกคนในห้องเลย
+                                            </p>
+                                        </div>
+                                        <Loader2 className="size-6 animate-spin text-[var(--candy)]" />
+                                    </div>
+                                )}
+                            </div>
+                        </section>
                     </div>
 
-                    {/* Question Content Container */}
-                    <div className="flex-1 flex flex-col min-h-0 gap-4">
-                        {/* Question Text */}
-                        <div className="flex-shrink-0 flex items-center justify-center min-h-[15vh] max-h-[30vh]">
-                            <div className="w-full max-w-5xl glass-card rounded-2xl p-4 md:p-8 text-center transform shadow-[0_10px_60px_rgba(0,0,0,0.5)] overflow-y-auto max-h-full">
-                                <h2 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight drop-shadow-lg break-words">
-                                    {currentQuestion.questionText}
-                                </h2>
-                            </div>
+                    <footer className="kq-shell-wide flex flex-wrap items-center justify-between gap-4 pb-8">
+                        <div className="kq-stat">
+                            <span className="kq-stat-icon">
+                                <Users className="size-5" strokeWidth={2.5} />
+                            </span>
+                            <span>
+                                <span className="kq-stat-value block text-2xl">
+                                    {gameData.players.length}
+                                </span>
+                                <span className="kq-stat-label block">ผู้เล่นพร้อมแล้ว</span>
+                            </span>
                         </div>
 
-                        {/* Answers Grid */}
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 max-w-7xl mx-auto w-full min-h-0">
+                        <button
+                            type="button"
+                            onClick={handleStartGame}
+                            disabled={gameData.players.length === 0 || isUpdating}
+                            className="kq-btn kq-btn-yellow kq-btn-lg"
+                        >
+                            {isUpdating ? (
+                                <Loader2 className="size-5 animate-spin" />
+                            ) : (
+                                <Play className="size-5" />
+                            )}
+                            เริ่มเกม
+                        </button>
+                    </footer>
+                </div>
+            )}
+
+            {/* ════════════════════ QUESTION ════════════════════ */}
+            {gameData.status === "QUESTION" && currentQuestion && (
+                <div className="relative z-10 flex min-h-dvh flex-col">
+                    <header className="kq-shell-wide flex flex-wrap items-center justify-between gap-4 pt-6">
+                        <div className="min-w-0">
+                            <p className="kq-overline text-[var(--electric)]">
+                                QUESTION {gameData.currentQuestionIndex + 1} /{" "}
+                                {gameData.quiz.questions.length}
+                            </p>
+                            <h1 className="truncate text-[clamp(1.2rem,2.4vw,1.9rem)] font-extrabold text-[var(--on-arcade)]">
+                                {gameData.quiz.title}
+                            </h1>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <div className="text-right">
+                                <p className="kq-pixel text-[9px] text-[var(--sunny)]">ANSWERS</p>
+                                <p className="text-2xl font-extrabold text-[var(--on-arcade)]">
+                                    {answeredCount}{" "}
+                                    <span className="text-base text-[#bb9fff]">
+                                        / {gameData.players.length}
+                                    </span>
+                                </p>
+                            </div>
+                            <div
+                                className={`kq-timer text-3xl ${
+                                    timeRemaining <= 5 ? "kq-timer-danger" : ""
+                                }`}
+                                aria-label={`เหลือเวลา ${timeRemaining} วินาที`}
+                            >
+                                {timeRemaining}
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="kq-shell-wide mt-5">
+                        <Progress
+                            value={(timeRemaining / currentQuestion.timeLimit) * 100}
+                            className="h-5"
+                        />
+                    </div>
+
+                    <div className="kq-shell flex flex-1 flex-col gap-6 py-5">
+                        <h2 className="kq-title-xl text-center text-[clamp(1.7rem,4vw,3.1rem)]">
+                            {currentQuestion.questionText}
+                        </h2>
+
+                        <div className="grid min-h-0 flex-1 gap-4 sm:grid-cols-2 sm:grid-rows-2">
                             {currentQuestion.answers.map((answer, idx) => (
-                                <div key={answer.id} className={`answer-btn ${getColorClass(answer.color)} flex items-center p-3 md:p-4 relative overflow-hidden group rounded-xl border-b-4 border-black/20 btn-juicy shadow-xl min-h-0 h-full`}>
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                                    <div className="absolute -right-4 -bottom-4 opacity-10 transform rotate-12 group-hover:scale-110 transition-transform duration-500 hidden sm:block">
-                                        <div className="text-5xl md:text-7xl font-black">{["▲", "◆", "●", "■"][idx]}</div>
-                                    </div>
-                                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-black/20 flex items-center justify-center font-black text-lg md:text-xl shadow-inner mr-3 md:mr-4 z-10 flex-shrink-0">
-                                        {["A", "B", "C", "D"][idx]}
-                                    </div>
-                                    <span className="text-base sm:text-lg lg:text-2xl font-bold text-shadow-sm drop-shadow-md z-10 break-words line-clamp-2 overflow-hidden flex-1">
+                                <div
+                                    key={answer.id}
+                                    className={`kq-answer pointer-events-none min-h-[7rem] cursor-default ${getColorClass(
+                                        answer.color
+                                    )}`}
+                                >
+                                    <span className="kq-answer-shape kq-pixel text-[10px]">
+                                        {answerLetters[idx]}
+                                    </span>
+                                    <span className="flex-1 text-[clamp(1.1rem,2.1vw,2rem)] font-bold leading-snug break-words">
                                         {answer.answerText}
+                                    </span>
+                                    <span
+                                        aria-hidden
+                                        className="kq-pixel hidden text-2xl text-[#211543]/25 lg:block"
+                                    >
+                                        {answerGlyphs[idx]}
                                     </span>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    {/* Footer Progress & Status */}
-                    <div className="fixed bottom-0 left-0 right-0 h-2 bg-black/60 shadow-inner z-20">
-                        <div
-                            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 shadow-[0_0_20px_#a855f7]"
-                            style={{ width: `${(timeRemaining / currentQuestion.timeLimit) * 100}%`, transition: "width 1s linear" }}
-                        />
-                    </div>
-
-                    <div className="fixed bottom-4 right-4 glass-panel px-4 py-2 rounded-xl flex items-center gap-3 z-30 shadow-xl">
-                        <div className="text-right">
-                            <p className="text-[10px] uppercase text-white/50 font-bold tracking-widest">Answers</p>
-                            <p className="text-lg font-black">
-                                {answeredCount} <span className="text-sm text-white/40">/ {gameData.players.length}</span>
-                            </p>
+                    <footer className="kq-shell-wide flex flex-wrap items-center justify-between gap-4 pb-8">
+                        <div className="kq-stat">
+                            <span className="kq-stat-icon">
+                                <Users className="size-5" strokeWidth={2.5} />
+                            </span>
+                            <span>
+                                <span className="kq-stat-value block text-2xl">
+                                    {answeredCount} / {gameData.players.length}
+                                </span>
+                                <span className="kq-stat-label block">ตอบแล้ว</span>
+                            </span>
                         </div>
-                        <Button variant="secondary" onClick={handleShowAnswer} className="h-10 w-10 rounded-full p-0 bg-white/10 hover:bg-white/20 border-none">
-                            <SkipForward className="w-4 h-4" />
-                        </Button>
-                    </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={handleShowAnswer}
+                                disabled={isUpdating}
+                                className="kq-btn kq-btn-paper kq-btn-lg"
+                            >
+                                <SkipForward className="size-5" />
+                                แสดงคำตอบ
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleNextQuestion}
+                                disabled={isUpdating}
+                                className="kq-btn kq-btn-purple kq-btn-lg"
+                            >
+                                <ChevronRight className="size-5" />
+                                ข้อต่อไป
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleEndGame}
+                                disabled={isUpdating}
+                                className="kq-btn kq-btn-danger kq-btn-lg"
+                            >
+                                <X className="size-5" />
+                                จบเกม
+                            </button>
+                        </div>
+                    </footer>
                 </div>
             )}
 
-            {/* SHOWING ANSWER (REVEAL) */}
+            {/* ════════════════════ SHOWING ANSWER ════════════════════ */}
             {gameData.status === "SHOWING_ANSWER" && currentQuestion && (
-                <div className="h-screen flex flex-col p-4 md:p-6 pb-20 relative z-10 overflow-hidden">
-                    <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-6">
-                        <div className="flex-shrink-0 w-full max-w-5xl flex items-center justify-center min-h-[10vh] max-h-[25vh]">
-                            <h2 className="text-xl sm:text-2xl lg:text-4xl font-bold text-center drop-shadow-2xl opacity-80 break-words px-4 overflow-y-auto max-h-full">
-                                {currentQuestion.questionText}
-                            </h2>
+                <div className="relative z-10 flex min-h-dvh flex-col">
+                    <header className="kq-shell-wide flex flex-wrap items-center justify-between gap-4 pt-6">
+                        <div className="min-w-0">
+                            <p className="kq-overline text-[var(--sunny)]">ANSWER REVEAL</p>
+                            <h1 className="truncate text-[clamp(1.2rem,2.4vw,1.9rem)] font-extrabold text-[var(--on-arcade)]">
+                                {gameData.quiz.title}
+                            </h1>
                         </div>
+                        <span className="kq-badge kq-badge-cyan text-[10px]">
+                            เฉลยข้อ {gameData.currentQuestionIndex + 1} /{" "}
+                            {gameData.quiz.questions.length}
+                        </span>
+                    </header>
 
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full max-w-6xl min-h-0 px-2 lg:px-4">
-                            {currentQuestion.answers.map((answer) => (
+                    <div className="kq-shell flex flex-1 flex-col gap-5 py-4">
+                        <h2 className="text-center text-[clamp(1.4rem,3vw,2.4rem)] font-extrabold leading-snug text-[#f2e6ff]">
+                            {currentQuestion.questionText}
+                        </h2>
+
+                        <div className="grid min-h-0 flex-1 gap-4 sm:grid-cols-2 sm:grid-rows-2">
+                            {currentQuestion.answers.map((answer, idx) => (
                                 <div
                                     key={answer.id}
-                                    className={`answer-btn ${getColorClass(answer.color)} rounded-xl p-4 md:p-6 flex items-center shadow-lg
-                                    ${answer.isCorrect
-                                            ? "ring-2 md:ring-4 ring-green-400 ring-offset-2 md:ring-offset-black scale-[1.02] z-20 opacity-100 shadow-[0_0_30px_rgba(74,222,128,0.5)]"
-                                            : "opacity-30 scale-95 grayscale blur-[1px]"
-                                        } transition-all duration-700 ease-out h-full min-h-0`}
+                                    className={`kq-answer pointer-events-none cursor-default ${getColorClass(
+                                        answer.color
+                                    )} ${
+                                        answer.isCorrect ? "kq-answer-correct" : "kq-answer-dim"
+                                    }`}
                                 >
-                                    <div className="flex items-center justify-between w-full h-full gap-4">
-                                        <span className="text-lg sm:text-xl lg:text-3xl font-bold break-words line-clamp-3 overflow-hidden">
-                                            {answer.answerText}
+                                    <span className="kq-answer-shape kq-pixel text-[10px]">
+                                        {answerLetters[idx]}
+                                    </span>
+                                    <span className="flex-1 text-[clamp(1.1rem,2.1vw,2rem)] font-bold leading-snug break-words">
+                                        {answer.answerText}
+                                    </span>
+                                    {answer.isCorrect ? (
+                                        <span
+                                            aria-label="คำตอบที่ถูกต้อง"
+                                            className="grid size-11 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--sunny)] text-[#211543] shadow-hard-sm"
+                                        >
+                                            <Check className="size-6" strokeWidth={3.5} />
                                         </span>
-                                        <div className="flex-shrink-0">
-                                            {answer.isCorrect ? (
-                                                <div className="bg-white text-green-600 rounded-full p-1.5 md:p-2 shadow-lg animate-bounce-in">
-                                                    <Check className="w-5 h-5 md:w-8 md:h-8 stroke-[4]" />
-                                                </div>
-                                            ) : (
-                                                <div className="bg-black/20 text-white rounded-full p-1.5 md:p-2">
-                                                    <X className="w-5 h-5 md:w-8 md:h-8" />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                    ) : (
+                                        <span
+                                            aria-label="คำตอบที่ผิด"
+                                            className="grid size-11 flex-none place-items-center border-[3px] border-line bg-[var(--paper)] text-[#211543]"
+                                        >
+                                            <X className="size-6" strokeWidth={3} />
+                                        </span>
+                                    )}
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    <div className="flex justify-center pb-4 md:pb-8 pt-4 animate-in slide-in-from-bottom duration-500 delay-500 z-20 flex-shrink-0">
-                        <Button
-                            size="lg"
+                    <footer className="kq-shell-wide flex flex-wrap items-center justify-between gap-4 pb-8">
+                        <div className="kq-stat">
+                            <span className="kq-stat-icon">
+                                <Users className="size-5" strokeWidth={2.5} />
+                            </span>
+                            <span>
+                                <span className="kq-stat-value block text-2xl">
+                                    {answeredCount} / {gameData.players.length}
+                                </span>
+                                <span className="kq-stat-label block">ตอบในข้อนี้</span>
+                            </span>
+                        </div>
+
+                        <button
+                            type="button"
                             onClick={handleShowLeaderboard}
                             disabled={isUpdating}
-                            className="bg-white text-black hover:bg-gray-100 text-lg md:text-xl font-black px-8 md:px-12 h-14 md:h-16 rounded-xl shadow-[0_10px_30px_rgba(255,255,255,0.2)] btn-juicy"
+                            className="kq-btn kq-btn-yellow kq-btn-lg"
                         >
-                            <Trophy className="w-5 h-5 md:w-6 md:h-6 mr-2 text-yellow-500" />
-                            NEXT
-                        </Button>
-                    </div>
+                            <Trophy className="size-5" />
+                            ดูอันดับ
+                        </button>
+                    </footer>
                 </div>
             )}
 
-            {/* LEADERBOARD */}
+            {/* ════════════════════ LEADERBOARD ════════════════════ */}
             {gameData.status === "LEADERBOARD" && (
-                <div className="h-screen flex flex-col p-4 md:p-6 items-center relative z-10 overflow-hidden">
-                    <div className="mt-4 md:mt-8 mb-4 md:mb-6 relative flex-shrink-0">
-                        <div className="absolute inset-0 bg-yellow-500 blur-3xl opacity-20"></div>
-                        <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-yellow-600 drop-shadow-sm text-shadow-3d flex items-center gap-3 md:gap-4 px-4 text-center">
-                            <Trophy className="w-8 h-8 md:w-16 md:h-16 text-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.8)] hidden xs:block" />
-                            TOP 5
-                        </h1>
-                    </div>
+                <div className="relative z-10 flex min-h-dvh flex-col">
+                    <header className="kq-shell-wide flex flex-col items-center gap-3 pt-8 text-center">
+                        <ArcadeSprite kind="trophy" className="size-20 animate-float" />
+                        <div>
+                            <p className="kq-overline text-[var(--sunny)]">LEADERBOARD</p>
+                            <h1 className="kq-title-xl">TOP 5</h1>
+                        </div>
+                        <p className="text-sm font-semibold text-[#f2e6ff]">
+                            หลังข้อ {gameData.currentQuestionIndex + 1} /{" "}
+                            {gameData.quiz.questions.length}
+                        </p>
+                    </header>
 
-                    <div className="w-full max-w-4xl space-y-2 md:space-y-3 flex-1 overflow-y-auto px-4 pb-20 min-h-0">
+                    <div className="kq-shell mt-6 flex flex-1 flex-col gap-3 pb-6">
                         {[...gameData.players]
                             .sort((a, b) => b.score - a.score)
                             .slice(0, 5)
                             .map((player, index) => (
                                 <div
                                     key={player.id}
-                                    className="flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-xl glass-card border-none hover:bg-white/10 transition-all transform hover:scale-[1.01] shadow-lg shrink-0"
-                                    style={{ animationDelay: `${index * 150}ms` }}
+                                    className="kq-leader-row animate-slide-up text-lg lg:text-2xl"
+                                    style={{ animationDelay: `${index * 90}ms` }}
                                 >
-                                    <div className={`w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl flex-shrink-0 flex items-center justify-center text-lg md:text-2xl font-black text-white shadow-lg ${index === 0 ? "bg-gradient-to-br from-yellow-300 to-yellow-600 shadow-yellow-500/50" :
-                                        index === 1 ? "bg-gradient-to-br from-gray-300 to-gray-500 shadow-gray-500/50" :
-                                            index === 2 ? "bg-gradient-to-br from-orange-400 to-orange-700 shadow-orange-500/50" : "bg-white/10"
-                                        }`}>
+                                    <span
+                                        className={`kq-rank ${
+                                            index === 0
+                                                ? "kq-rank-1"
+                                                : index === 1
+                                                  ? "kq-rank-2"
+                                                  : index === 2
+                                                    ? "kq-rank-3"
+                                                    : "bg-[var(--paper)]"
+                                        }`}
+                                    >
                                         {index + 1}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h3 className="text-lg md:text-2xl font-bold tracking-tight truncate">{player.nickname}</h3>
-                                    </div>
-                                    <div className="text-xl md:text-3xl font-black font-mono tracking-tighter text-cyan-300 drop-shadow-[0_0_10px_rgba(103,232,249,0.5)] flex-shrink-0">
-                                        {player.score.toLocaleString()}
-                                    </div>
+                                    </span>
+
+                                    <span className="min-w-0 flex-1 truncate font-extrabold text-ink">
+                                        {player.nickname}
+                                    </span>
+
+                                    {index === 0 ? (
+                                        <ArcadeSprite
+                                            kind="trophy"
+                                            className="size-8 flex-none"
+                                            title="ผู้ชนะอันดับ 1"
+                                        />
+                                    ) : null}
+
+                                    <span className="flex-none border-[3px] border-line bg-[var(--arcade-deep)] px-3 py-1">
+                                        <span className="kq-stat-value text-base lg:text-xl">
+                                            {player.score.toLocaleString()}
+                                        </span>
+                                    </span>
                                 </div>
                             ))}
                     </div>
 
-                    <div className="fixed bottom-0 left-0 right-0 px-4 flex justify-center pb-6 pt-4 z-20 bg-gradient-to-t from-black/20 to-transparent">
-                        <Button
-                            size="lg"
+                    <footer className="kq-shell flex justify-center pb-8">
+                        <button
+                            type="button"
                             onClick={handleNextQuestion}
                             disabled={isUpdating}
-                            className="w-full max-w-sm bg-white text-black hover:bg-gray-100 text-lg md:text-xl font-black px-8 h-14 md:h-16 rounded-xl shadow-[0_10px_40px_rgba(255,255,255,0.15)] btn-juicy"
+                            className="kq-btn kq-btn-yellow kq-btn-lg max-w-md kq-btn-block"
                         >
-                            {gameData.currentQuestionIndex + 1 >= gameData.quiz.questions.length ? "Finish Game" : "Next Question"}
-                            <ChevronRight className="w-5 h-5 md:w-6 md:h-6 ml-2" />
-                        </Button>
-                    </div>
+                            {gameData.currentQuestionIndex + 1 >=
+                            gameData.quiz.questions.length
+                                ? "จบเกม"
+                                : "ข้อต่อไป"}
+                            <ChevronRight className="size-5" />
+                        </button>
+                    </footer>
                 </div>
             )}
 
-            {/* FINISHED */}
+            {/* ════════════════════ FINISHED ════════════════════ */}
             {gameData.status === "FINISHED" && (
-                <div className="h-screen flex flex-col items-center justify-between p-4 md:p-8 relative overflow-hidden z-10">
-                    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="relative z-10 flex min-h-dvh flex-col items-center">
+                    {/* Confetti */}
+                    <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 overflow-hidden"
+                    >
                         {[...Array(30)].map((_, i) => (
-                            <div key={i} className="absolute w-3 h-3 md:w-5 md:h-5 rounded-sm animate-float"
+                            <div
+                                key={i}
+                                className="absolute size-3 animate-float lg:size-5"
                                 style={{
-                                    backgroundColor: ['#f00', '#0f0', '#00f', '#ff0', '#f0f', '#0ff'][Math.floor(Math.random() * 6)],
+                                    backgroundColor: [
+                                        "var(--sunny)",
+                                        "var(--electric)",
+                                        "var(--candy)",
+                                        "var(--mint)",
+                                        "var(--peach)",
+                                        "var(--grape)",
+                                    ][Math.floor(Math.random() * 6)],
                                     top: `${Math.random() * 100}%`,
                                     left: `${Math.random() * 100}%`,
                                     animationDuration: `${3 + Math.random() * 4}s`,
                                     animationDelay: `-${Math.random() * 5}s`,
-                                    opacity: 0.7
+                                    opacity: 0.7,
                                 }}
                             />
                         ))}
                     </div>
 
-                    <div className="flex-shrink-0 mt-4 md:mt-8">
-                        <h1 className="text-4xl sm:text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 via-orange-400 to-red-500 drop-shadow-lg text-shadow-3d animate-bounce-in text-center px-4">
-                            PODIUM
+                    <header className="relative z-10 flex flex-col items-center gap-2 px-4 pt-8 text-center">
+                        <ArcadeSprite kind="trophy" className="size-24 animate-float" />
+                        <p className="kq-overline text-[var(--sunny)]">GAME OVER</p>
+                        <h1 className="kq-title-xl animate-bounce-in text-[clamp(2.4rem,6vw,4.5rem)]">
+                            จบเกม
                         </h1>
-                    </div>
+                        <p className="text-base font-semibold text-[#f2e6ff]">
+                            อันดับสุดท้าย • {gameData.quiz.title}
+                        </p>
+                    </header>
 
-                    <div className="flex-1 flex items-end justify-center w-full max-w-5xl px-2 min-h-0 pb-4">
-                        <div className="flex items-end justify-center gap-2 sm:gap-4 md:gap-8 w-full h-[60vh] max-h-[500px]">
+                    {/* Podium */}
+                    <div className="relative z-10 flex w-full max-w-5xl flex-1 items-end justify-center px-3 pb-4">
+                        <div className="flex h-[46vh] max-h-[440px] w-full items-end justify-center gap-3 lg:gap-6">
                             {(() => {
-                                const sorted = [...gameData.players].sort((a, b) => b.score - a.score);
+                                const sorted = [...gameData.players].sort(
+                                    (a, b) => b.score - a.score
+                                );
                                 const topThree = sorted.slice(0, 3);
                                 return (
                                     <>
                                         {/* 2nd Place */}
                                         {topThree[1] && (
-                                            <div className="flex flex-col items-center w-1/3 animate-in slide-in-from-bottom duration-1000 delay-200 h-[70%] max-h-full min-w-0">
-                                                <div className="relative mb-2 md:mb-4 flex-shrink-0 transform scale-75 md:scale-100 origin-bottom">
-                                                    <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-full bg-gray-300 border-2 md:border-4 border-white shadow-[0_0_20px_rgba(255,255,255,0.4)] flex items-center justify-center z-10 relative">
-                                                        <span className="text-3xl sm:text-4xl">🥈</span>
-                                                    </div>
+                                            <div className="flex h-[68%] min-w-0 flex-1 flex-col items-center">
+                                                <div className="mb-2 grid size-12 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--electric)] text-[#211543] shadow-hard-sm lg:size-16">
+                                                    <span className="kq-pixel text-sm">2</span>
                                                 </div>
-                                                <div className="flex-1 w-full bg-gradient-to-t from-gray-900/80 to-gray-700/80 rounded-t-xl md:rounded-t-2xl backdrop-blur-md border-t border-white/20 flex flex-col items-center pt-3 md:pt-4 shadow-2xl min-w-0">
-                                                    <p className="font-bold text-sm sm:text-lg lg:text-2xl text-white mb-1 px-2 text-center truncate w-full">{topThree[1].nickname}</p>
-                                                    <Badge variant="secondary" className="text-[10px] sm:text-sm lg:text-base px-2 py-0.5 whitespace-nowrap">{topThree[1].score.toLocaleString()}</Badge>
+                                                <div className="flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--arcade)] px-2 pt-3 text-center">
+                                                    <p className="w-full truncate text-base font-extrabold text-[var(--on-arcade)] lg:text-2xl">
+                                                        {topThree[1].nickname}
+                                                    </p>
+                                                    <span className="kq-stat-value text-sm lg:text-lg">
+                                                        {topThree[1].score.toLocaleString()}
+                                                    </span>
                                                 </div>
                                             </div>
                                         )}
 
                                         {/* 1st Place */}
                                         {topThree[0] && (
-                                            <div className="flex flex-col items-center w-1/3 z-20 animate-in slide-in-from-bottom duration-1000 h-[85%] max-h-full min-w-0">
-                                                <div className="relative mb-3 md:mb-6 flex-shrink-0 transform scale-75 md:scale-100 origin-bottom">
-                                                    <Trophy className="w-8 h-8 sm:w-12 sm:h-12 lg:w-16 lg:h-16 text-yellow-300 absolute -top-10 sm:-top-16 lg:-top-20 left-1/2 -translate-x-1/2 animate-bounce drop-shadow-[0_0_20px_rgba(250,204,21,1)]" />
-                                                    <div className="w-20 h-20 sm:w-24 sm:h-24 lg:w-32 lg:h-32 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 border-4 md:border-8 border-white shadow-[0_0_60px_rgba(250,204,21,0.6)] flex items-center justify-center z-10 relative">
-                                                        <span className="text-4xl sm:text-5xl lg:text-6xl">👑</span>
-                                                    </div>
+                                            <div className="z-20 flex h-[90%] min-w-0 flex-1 flex-col items-center">
+                                                <ArcadeSprite
+                                                    kind="trophy"
+                                                    className="mb-1 size-12 flex-none animate-float lg:size-16"
+                                                    title="ถ้วยรางวัลผู้ชนะ"
+                                                />
+                                                <div className="mb-2 grid size-14 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--sunny)] text-[#211543] shadow-hard-sm lg:size-20">
+                                                    <span className="kq-pixel text-base">1</span>
                                                 </div>
-                                                <div className="flex-1 w-full bg-gradient-to-t from-yellow-900/80 via-yellow-700/80 to-yellow-600/80 rounded-t-2xl md:rounded-t-3xl backdrop-blur-md border-t border-white/30 flex flex-col items-center pt-4 md:pt-6 shadow-[0_0_50px_rgba(234,179,8,0.3)] min-w-0">
-                                                    <p className="font-black text-base sm:text-2xl lg:text-4xl text-white mb-1 md:mb-2 text-shadow-sm px-2 text-center truncate w-full">{topThree[0].nickname}</p>
-                                                    <Badge className="text-xs sm:text-lg lg:text-xl px-3 py-1 bg-black/40 border-none">{topThree[0].score.toLocaleString()}</Badge>
+                                                <div className="flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--grape)] px-2 pt-4 text-center shadow-hard-lg">
+                                                    <p className="w-full truncate text-lg font-extrabold text-[var(--on-arcade)] lg:text-3xl">
+                                                        {topThree[0].nickname}
+                                                    </p>
+                                                    <span className="kq-stat-value text-lg lg:text-2xl">
+                                                        {topThree[0].score.toLocaleString()}
+                                                    </span>
                                                 </div>
                                             </div>
                                         )}
 
                                         {/* 3rd Place */}
                                         {topThree[2] && (
-                                            <div className="flex flex-col items-center w-1/3 animate-in slide-in-from-bottom duration-1000 delay-500 h-[55%] max-h-full min-w-0">
-                                                <div className="relative mb-2 md:mb-4 flex-shrink-0 transform scale-75 md:scale-100 origin-bottom">
-                                                    <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-full bg-orange-700 border-2 md:border-4 border-white shadow-[0_0_20px_rgba(194,65,12,0.4)] flex items-center justify-center z-10 relative">
-                                                        <span className="text-3xl sm:text-4xl">🥉</span>
-                                                    </div>
+                                            <div className="flex h-[52%] min-w-0 flex-1 flex-col items-center">
+                                                <div className="mb-2 grid size-12 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--peach)] text-[#211543] shadow-hard-sm lg:size-16">
+                                                    <span className="kq-pixel text-sm">3</span>
                                                 </div>
-                                                <div className="flex-1 w-full bg-gradient-to-t from-orange-950/80 to-orange-800/80 rounded-t-xl md:rounded-t-2xl backdrop-blur-md border-t border-white/20 flex flex-col items-center pt-3 md:pt-4 shadow-2xl min-w-0">
-                                                    <p className="font-bold text-sm sm:text-lg lg:text-2xl text-white mb-1 px-2 text-center truncate w-full">{topThree[2].nickname}</p>
-                                                    <Badge variant="secondary" className="text-[10px] sm:text-sm lg:text-base px-2 py-0.5 whitespace-nowrap">{topThree[2].score.toLocaleString()}</Badge>
+                                                <div className="flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--arcade)] px-2 pt-3 text-center">
+                                                    <p className="w-full truncate text-base font-extrabold text-[var(--on-arcade)] lg:text-2xl">
+                                                        {topThree[2].nickname}
+                                                    </p>
+                                                    <span className="kq-stat-value text-sm lg:text-lg">
+                                                        {topThree[2].score.toLocaleString()}
+                                                    </span>
                                                 </div>
                                             </div>
                                         )}
@@ -800,13 +1099,19 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                         </div>
                     </div>
 
-                    <div className="flex-shrink-0 w-full max-w-sm flex justify-center z-20 mb-6 lg:mb-10">
-                        <Link href="/quizzes" className="w-full">
-                            <Button size="lg" className="h-14 md:h-16 px-8 md:px-12 w-full text-lg md:text-xl font-black bg-white text-black hover:bg-gray-100 shadow-[0_10px_40px_rgba(255,255,255,0.2)] rounded-2xl btn-juicy">
-                                BACK TO MENU
-                            </Button>
+                    <footer className="relative z-10 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 px-4 pb-10">
+                        <Link href="/quizzes" className="kq-btn kq-btn-paper kq-btn-lg">
+                            <ArrowLeft className="size-5" />
+                            กลับแดชบอร์ด
                         </Link>
-                    </div>
+                        <Link
+                            href={`/quizzes/${gameData.quiz.id}/host`}
+                            className="kq-btn kq-btn-yellow kq-btn-lg"
+                        >
+                            <Play className="size-5" />
+                            เล่นอีกครั้ง
+                        </Link>
+                    </footer>
                 </div>
             )}
         </div>
