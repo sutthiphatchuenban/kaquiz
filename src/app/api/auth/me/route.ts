@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 import prisma from "@/lib/prisma";
 import type { ApiResponse, AuthUser } from "@/types";
+import { isAdminEmail } from "@/lib/server/admin-auth";
 
 const JWT_SECRET = new TextEncoder().encode(
     process.env.JWT_SECRET || "kaquiz-super-secret-key-change-in-production"
@@ -50,7 +51,7 @@ export async function GET() {
 
         return NextResponse.json<ApiResponse<AuthUser>>({
             success: true,
-            data: user,
+            data: { ...user, isAdmin: isAdminEmail(user.email) },
         });
     } catch (error: unknown) {
         console.error("Get me error:", error);

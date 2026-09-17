@@ -36,6 +36,7 @@ We have created a standalone `socket-server.js` file in your project root for th
 |--------------|-------|-------------|
 | `DATABASE_URL` | `postgresql://...` | Copy from your local `.env`. Ensure your Neon DB allows connections from Vercel. |
 | `JWT_SECRET` | `...` | Generate a random secret string (e.g., `openssl rand -base64 32`). |
+| `ADMIN_EMAILS` | `admin@example.com` | Comma-separated emails allowed to access `/admin`. The accounts must already be registered. |
 | `UPLOADTHING_TOKEN` | `...` | Copy from your local `.env`. |
 | `NEXT_PUBLIC_SOCKET_URL` | `https://kaquiz-socket.onrender.com` | **Crucial**: The URL from Part 1 (no trailing slash). |
 | `OPENROUTER_API_KEY` | `sk-or-v1-...` | Required for AI quiz generation through OpenRouter free models. |

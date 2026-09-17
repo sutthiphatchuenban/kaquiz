@@ -7,7 +7,7 @@ const JWT_SECRET = new TextEncoder().encode(
 );
 
 // Routes that require authentication
-const protectedRoutes = ["/dashboard", "/quizzes", "/reports", "/settings"];
+const protectedRoutes = ["/dashboard", "/quizzes", "/reports", "/settings", "/admin"];
 
 // Routes that should redirect to dashboard if authenticated
 const authRoutes = ["/login", "/register"];

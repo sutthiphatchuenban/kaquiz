@@ -21,6 +21,7 @@ import {
     Menu,
     Plus,
     Settings,
+    ShieldCheck,
 } from "lucide-react";
 
 const NAV = [
@@ -144,6 +145,17 @@ export function AppHeader() {
                                     </Link>
                                 </DropdownMenuItem>
                             ))}
+                            {user?.isAdmin ? (
+                                <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem asChild>
+                                        <Link href="/admin">
+                                            <ShieldCheck className="size-4" />
+                                            ระบบผู้ดูแล
+                                        </Link>
+                                    </DropdownMenuItem>
+                                </>
+                            ) : null}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem variant="destructive" onClick={handleLogout}>
                                 <LogOut className="size-4" />

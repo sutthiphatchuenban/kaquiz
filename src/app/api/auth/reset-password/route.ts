@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { resetPasswordSchema } from "@/lib/validations/auth";
 import type { ApiResponse } from "@/types";
+import { isAdminEmail } from "@/lib/server/admin-auth";
 
 export async function POST(request: NextRequest) {
     try {
@@ -15,6 +16,13 @@ export async function POST(request: NextRequest) {
         }
 
         const email = result.data.email.trim().toLowerCase();
+        if (isAdminEmail(email)) {
+            return NextResponse.json<ApiResponse>(
+                { success: false, error: "บัญชีผู้ดูแลไม่สามารถรีเซ็ตรหัสผ่านด้วยวิธีนี้ได้" },
+                { status: 403 }
+            );
+        }
+
         const user = await prisma.user.findUnique({
             where: { email },
             select: { id: true },

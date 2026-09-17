@@ -5,6 +5,7 @@ import { loginSchema } from "@/lib/validations/auth";
 import type { ApiResponse, AuthUser } from "@/types";
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
+import { isAdminEmail } from "@/lib/server/admin-auth";
 
 const JWT_SECRET = new TextEncoder().encode(
     process.env.JWT_SECRET || "kaquiz-super-secret-key-change-in-production"
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
             email: user.email,
             name: user.name,
             avatar: user.avatar,
+            isAdmin: isAdminEmail(user.email),
         };
 
         return NextResponse.json<ApiResponse<AuthUser>>({
