@@ -194,9 +194,16 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
         try {
             const endpoint = `/api/quizzes/${id}/questions`;
             const method = editingQuestionId ? "PUT" : "POST";
+
+            // `order` is required when creating, and an edit must send the
+            // position the question already has — otherwise the API rejects it.
+            const currentOrder = editingQuestionId
+                ? quiz?.questions.find((q) => q.id === editingQuestionId)?.order
+                : undefined;
+
             const body = {
                 ...newQuestion,
-                order: editingQuestionId ? undefined : (quiz?.questions.length || 0),
+                order: currentOrder ?? quiz?.questions.length ?? 0,
                 answers: filledAnswers,
                 questionId: editingQuestionId // Include ID for updates
             };

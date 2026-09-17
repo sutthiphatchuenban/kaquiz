@@ -13,9 +13,16 @@ export const questionSchema = z.object({
     timeLimit: z.number().int().min(5).max(120).default(20),
     points: z.number().int().min(100).max(2000).default(1000),
     imageUrl: z.string().url().optional().nullable().or(z.literal("")),
-    order: z.number().int().min(0),
+    order: z.number({ error: "ต้องระบุลำดับ (order) เป็นตัวเลข" }).int().min(0, "ลำดับต้องไม่ติดลบ"),
     answers: z.array(answerSchema).min(2, "ต้องมีคำตอบอย่างน้อย 2 ตัวเลือก"),
 });
+
+/**
+ * Updating a question may omit `order` — the position it already has is kept.
+ * `answers` stays required because an update replaces the whole set, and
+ * silently dropping them would wipe the question's choices.
+ */
+export const updateQuestionSchema = questionSchema.partial({ order: true });
 
 export const quizSchema = z.object({
     title: z
@@ -33,6 +40,7 @@ export const updateQuizSchema = quizSchema.partial();
 
 export type AnswerInput = z.infer<typeof answerSchema>;
 export type QuestionInput = z.infer<typeof questionSchema>;
+export type UpdateQuestionInput = z.infer<typeof updateQuestionSchema>;
 export type QuizInput = z.infer<typeof quizSchema>;
 export type CreateQuizInput = z.infer<typeof createQuizSchema>;
 export type UpdateQuizInput = z.infer<typeof updateQuizSchema>;

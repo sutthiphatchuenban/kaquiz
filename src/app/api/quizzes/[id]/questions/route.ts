@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 import prisma from "@/lib/prisma";
-import { questionSchema } from "@/lib/validations/quiz";
+import { questionSchema, updateQuestionSchema } from "@/lib/validations/quiz";
 import type { ApiResponse } from "@/types";
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -114,11 +114,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const result = questionSchema.safeParse(body);
 
         if (!result.success) {
+            const issue = result.error.issues[0];
+            const field = issue?.path.join(".") || "body";
             console.error("Zod Validation Error:", result.error.format());
             return NextResponse.json<ApiResponse>(
                 {
                     success: false,
-                    error: result.error.issues[0]?.message || "ข้อมูลไม่ถูกต้อง"
+                    error: `ข้อมูลไม่ถูกต้องที่ "${field}" — ${issue?.message ?? "ข้อมูลไม่ถูกต้อง"}`,
                 },
                 { status: 400 }
             );
@@ -186,11 +188,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             );
         }
 
-        // Validate data
-        const result = questionSchema.safeParse(data);
+        // Validate data. `order` is optional here: an edit that does not move
+        // the question keeps the position it already has.
+        const result = updateQuestionSchema.safeParse(data);
         if (!result.success) {
+            const issue = result.error.issues[0];
+            const field = issue?.path.join(".") || "body";
+            console.error("Zod Validation Error (update question):", result.error.format());
             return NextResponse.json<ApiResponse>(
-                { success: false, error: "ข้อมูลไม่ถูกต้อง" },
+                {
+                    success: false,
+                    error: `ข้อมูลไม่ถูกต้องที่ "${field}" — ${issue?.message ?? "รูปแบบไม่ถูกต้อง"}`,
+                },
                 { status: 400 }
             );
         }
