@@ -111,6 +111,17 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     const [answeredCount, setAnsweredCount] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
     const [isMusicOn, setIsMusicOn] = useState(true);
+    const [isQrOpen, setIsQrOpen] = useState(false);
+
+    useEffect(() => {
+        if (!isQrOpen) return;
+
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setIsQrOpen(false);
+        };
+        document.addEventListener("keydown", closeOnEscape);
+        return () => document.removeEventListener("keydown", closeOnEscape);
+    }, [isQrOpen]);
 
     // Sound Management
     const playSound = useCallback((type: "lobby" | "countdown" | "question" | "reveal" | "win" | "join") => {
@@ -497,6 +508,43 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                 }}
             />
 
+            {isQrOpen && joinUrl ? (
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="QR Code สำหรับเข้าร่วมเกม"
+                    className="fixed inset-0 z-[100] grid place-items-center bg-[#12082e]/90 p-4 backdrop-blur-sm"
+                    onClick={() => setIsQrOpen(false)}
+                >
+                    <div
+                        className="relative max-h-full max-w-full border-4 border-line bg-[var(--paper)] p-5 text-center shadow-hard-xl sm:p-8"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <button
+                            type="button"
+                            onClick={() => setIsQrOpen(false)}
+                            aria-label="ปิด QR Code"
+                            className="kq-btn kq-btn-sm kq-btn-yellow absolute -right-3 -top-3 z-10 !px-3"
+                        >
+                            <X className="size-5" />
+                        </button>
+                        <p className="kq-pixel mb-4 text-[10px] text-[#211543]">SCAN TO JOIN</p>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=900x900&data=${encodeURIComponent(joinUrl)}`}
+                            alt="QR Code ขนาดใหญ่สำหรับเข้าร่วมเกม"
+                            className="mx-auto h-auto w-[min(78vw,68vh)] max-w-[720px] bg-white"
+                        />
+                        <p className="mt-4 break-all text-sm font-bold text-[#211543] sm:text-base">
+                            {joinUrl}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-[#564765]">
+                            คลิกด้านนอกหรือกด ESC เพื่อปิด
+                        </p>
+                    </div>
+                </div>
+            ) : null}
+
             {/* ── Audio controls — kept in normal flow to avoid covering game UI ── */}
             <div className="kq-shell-wide relative z-20 flex justify-end pt-4">
                 <div className="flex items-center gap-2 border-[3px] border-line bg-[var(--paper)] p-2 shadow-hard">
@@ -606,13 +654,21 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
                                 {joinUrl ? (
                                     <div className="mt-5 flex items-center gap-4 border-[3px] border-line bg-[var(--cream)] p-3">
-                                        {/* External QR endpoint cannot use Next Image without a fixed remote pattern. */}
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`}
-                                            alt="QR Code สำหรับเข้าร่วมเกม"
-                                            className="size-24 flex-none border-[3px] border-line bg-[var(--paper)] lg:size-32"
-                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsQrOpen(true)}
+                                            aria-label="เปิด QR Code เต็มหน้าจอ"
+                                            title="คลิกเพื่อขยาย QR Code"
+                                            className="group flex-none cursor-zoom-in border-[3px] border-line bg-[var(--paper)] p-1 transition-transform hover:-translate-y-1 focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[var(--electric)]"
+                                        >
+                                            {/* External QR endpoint cannot use Next Image without a fixed remote pattern. */}
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`}
+                                                alt="QR Code สำหรับเข้าร่วมเกม"
+                                                className="size-24 bg-white lg:size-32"
+                                            />
+                                        </button>
                                         <div className="min-w-0">
                                             <p className="kq-pixel text-[8px] text-[#211543]">
                                                 SCAN ME
