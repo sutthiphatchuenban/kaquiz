@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuthStore } from "@/stores/auth-store";
 import { UploadButton } from "@/lib/uploadthing-components";
-import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     Select,
@@ -388,46 +387,6 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
                         <h2 className="kq-title mt-1 text-xl">ข้อมูล Quiz</h2>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <span
-                            className={`kq-badge ${
-                                quiz.isPublished ? "kq-badge-mint" : "kq-badge-paper"
-                            }`}
-                        >
-                            {quiz.isPublished ? "เผยแพร่แล้ว" : "ฉบับร่าง"}
-                        </span>
-                        <label htmlFor="published" className="kq-label mb-0 cursor-pointer">
-                            เผยแพร่
-                        </label>
-                        <Switch
-                            id="published"
-                            checked={quiz.isPublished}
-                            onCheckedChange={async (checked) => {
-                                setQuiz({ ...quiz, isPublished: checked });
-                                // Auto-save when toggling publish status
-                                try {
-                                    const res = await fetch(`/api/quizzes/${id}`, {
-                                        method: "PUT",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({
-                                            ...quiz,
-                                            isPublished: checked,
-                                        }),
-                                    });
-                                    const data = await res.json();
-                                    if (data.success) {
-                                        toast.success(checked ? "เผยแพร่แล้ว" : "ยกเลิกการเผยแพร่แล้ว");
-                                    } else {
-                                        toast.error(data.error || "บันทึกไม่สำเร็จ");
-                                        setQuiz({ ...quiz, isPublished: !checked });
-                                    }
-                                } catch {
-                                    toast.error("เกิดข้อผิดพลาด");
-                                    setQuiz({ ...quiz, isPublished: !checked });
-                                }
-                            }}
-                        />
-                    </div>
                 </div>
 
                 <div className="grid gap-5 p-5">

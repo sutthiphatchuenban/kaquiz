@@ -161,15 +161,6 @@ export default function QuizzesPage() {
                                 <span className="kq-badge absolute left-3 top-3">
                                     QUIZ {String(index + 1).padStart(2, "0")}
                                 </span>
-                                <span className="absolute right-3 top-3">
-                                    <span
-                                        className={`kq-badge ${
-                                            quiz.isPublished ? "kq-badge-mint" : "kq-badge-paper"
-                                        }`}
-                                    >
-                                        {quiz.isPublished ? "เผยแพร่แล้ว" : "ฉบับร่าง"}
-                                    </span>
-                                </span>
 
                                 <span className="grid size-20 rotate-[4deg] place-items-center border-[3px] border-line bg-paper shadow-hard-sm">
                                     <FileQuestion className="size-9 text-ink" strokeWidth={2.4} />

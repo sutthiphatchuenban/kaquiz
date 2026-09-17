@@ -50,7 +50,6 @@ export async function GET() {
                     select: {
                         id: true,
                         title: true,
-                        isPublished: true,
                         createdAt: true,
                         user: { select: { name: true, email: true } },
                         _count: { select: { questions: true, gameSessions: true } },

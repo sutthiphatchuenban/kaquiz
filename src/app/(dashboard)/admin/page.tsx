@@ -35,7 +35,6 @@ interface AdminUser {
 interface AdminQuiz {
     id: string;
     title: string;
-    isPublished: boolean;
     createdAt: string;
     user: { name: string; email: string };
     _count: { questions: number; gameSessions: number };
@@ -339,9 +338,6 @@ export default function AdminPage() {
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <h3 className="truncate font-bold text-ink">{item.title}</h3>
-                                                        <span className={`kq-badge ${item.isPublished ? "kq-badge-mint" : "kq-badge-paper"}`}>
-                                                            {item.isPublished ? "เผยแพร่" : "ฉบับร่าง"}
-                                                        </span>
                                                     </div>
                                                     <p className="mt-1 truncate text-sm text-muted-foreground">{item.user.name} · {item.user.email}</p>
                                                 </div>
