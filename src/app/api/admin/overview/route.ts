@@ -14,6 +14,18 @@ export async function GET() {
 
     try {
         const activeStatuses = ["LOBBY", "PLAYING", "QUESTION", "SHOWING_ANSWER", "LEADERBOARD"] as const;
+        const staleBefore = new Date(Date.now() - 60_000);
+
+        // A host sends a heartbeat every 15 seconds. Four missed heartbeats
+        // means the room is abandoned, so close it before calculating stats.
+        await prisma.gameSession.updateMany({
+            where: {
+                status: { in: [...activeStatuses] },
+                lastHeartbeatAt: { lt: staleBefore },
+            },
+            data: { status: "FINISHED", endedAt: new Date() },
+        });
+
         const [usersCount, quizzesCount, sessionsCount, playersCount, activeSessions, users, quizzes, sessions] =
             await Promise.all([
                 prisma.user.count(),

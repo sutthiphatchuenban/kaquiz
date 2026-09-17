@@ -190,7 +190,7 @@ export default function AdminPage() {
         { label: "Quiz ทั้งหมด", value: overview.stats.quizzes, icon: FileQuestion, color: "var(--sunny)", badge: "QUIZZES" },
         { label: "เซสชัน", value: overview.stats.sessions, icon: Gamepad2, color: "var(--peach)", badge: "SESSIONS" },
         { label: "ผู้เล่นสะสม", value: overview.stats.players, icon: UserRound, color: "var(--mint)", badge: "TOTAL PLAYS" },
-        { label: "กำลังเล่น", value: overview.stats.activeSessions, icon: Activity, color: "var(--candy)", badge: "LIVE NOW" },
+        { label: "ห้องที่ยังไม่จบ", value: overview.stats.activeSessions, icon: Activity, color: "var(--candy)", badge: "OPEN ROOMS" },
     ] : [];
 
     return (

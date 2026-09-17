@@ -16,13 +16,13 @@ datasource db {
 // ========================================
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  password     String
-  name         String
-  avatar       String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   quizzes      Quiz[]
@@ -114,6 +114,7 @@ model GameSession {
   currentQuestionIndex Int        @default(0)
   startedAt            DateTime?
   endedAt              DateTime?
+  lastHeartbeatAt      DateTime   @default(now())
   createdAt            DateTime   @default(now())
 
   // Relations
@@ -165,7 +166,7 @@ model Player {
 model PlayerAnswer {
   id           String   @id @default(cuid())
   isCorrect    Boolean
-  responseTime Int      // milliseconds
+  responseTime Int // milliseconds
   pointsEarned Int      @default(0)
   answeredAt   DateTime @default(now())
 

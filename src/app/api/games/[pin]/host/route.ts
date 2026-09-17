@@ -26,6 +26,41 @@ interface RouteParams {
     params: Promise<{ pin: string }>;
 }
 
+// POST /api/games/[pin]/host - Record that the host page is still connected.
+export async function POST(request: NextRequest, { params }: RouteParams) {
+    void request;
+    try {
+        const userId = await getUserFromToken();
+        const { pin } = await params;
+        if (!userId) {
+            return NextResponse.json<ApiResponse>(
+                { success: false, error: "กรุณาเข้าสู่ระบบ" },
+                { status: 401 }
+            );
+        }
+
+        const result = await prisma.gameSession.updateMany({
+            where: { pin, hostId: userId, status: { not: "FINISHED" } },
+            data: { lastHeartbeatAt: new Date() },
+        });
+
+        if (result.count === 0) {
+            return NextResponse.json<ApiResponse>(
+                { success: false, error: "ไม่พบห้องที่กำลังเปิดอยู่" },
+                { status: 404 }
+            );
+        }
+
+        return NextResponse.json<ApiResponse>({ success: true });
+    } catch (error) {
+        console.error("Host heartbeat error:", error);
+        return NextResponse.json<ApiResponse>(
+            { success: false, error: "บันทึกสถานะ Host ไม่สำเร็จ" },
+            { status: 500 }
+        );
+    }
+}
+
 // GET /api/games/[pin]/host - Get game data with answers for host
 export async function GET(request: NextRequest, { params }: RouteParams) {
     try {

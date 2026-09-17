@@ -177,6 +177,20 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         }
     }, [authLoading, isAuthenticated, router]);
 
+    // Heartbeats let the admin distinguish an open browser from a stale room.
+    // Refreshing the page is safe because it simply resumes the heartbeat.
+    useEffect(() => {
+        if (!isAuthenticated || gameData?.status === "FINISHED") return;
+
+        const sendHeartbeat = () => {
+            void fetch(`/api/games/${pin}/host`, { method: "POST" }).catch(() => undefined);
+        };
+
+        sendHeartbeat();
+        const heartbeat = window.setInterval(sendHeartbeat, 15_000);
+        return () => window.clearInterval(heartbeat);
+    }, [gameData?.status, isAuthenticated, pin]);
+
     // Create socket room when game loads or reconnects
     useEffect(() => {
         if (isAuthenticated && pin && isConnected) {
