@@ -19,5 +19,13 @@ export const loginSchema = z.object({
     password: z.string().min(1, "กรุณากรอกรหัสผ่าน"),
 });
 
+export const resetPasswordSchema = z.object({
+    email: z.string().email("กรุณากรอกอีเมลให้ถูกต้อง"),
+    password: z
+        .string()
+        .min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร")
+        .max(100, "รหัสผ่านต้องไม่เกิน 100 ตัวอักษร"),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

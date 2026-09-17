@@ -97,6 +97,14 @@ export default function LoginPage() {
                             {errors.password && (
                                 <p className="kq-error">{errors.password.message}</p>
                             )}
+                            <div className="mt-2 text-right">
+                                <Link
+                                    href="/forgot-password"
+                                    className="text-sm font-bold text-[#6234dc] hover:underline dark:text-[var(--sunny)]"
+                                >
+                                    ลืมรหัสผ่าน?
+                                </Link>
+                            </div>
                         </div>
 
                         <button
