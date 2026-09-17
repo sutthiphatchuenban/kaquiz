@@ -4,7 +4,6 @@ import { jwtVerify } from "jose";
 import prisma from "@/lib/prisma";
 import type { ApiResponse } from "@/types";
 
-type GameStatus = "LOBBY" | "PLAYING" | "QUESTION" | "SHOWING_ANSWER" | "LEADERBOARD" | "FINISHED";
 
 const JWT_SECRET = new TextEncoder().encode(
     process.env.JWT_SECRET || "kaquiz-super-secret-key-change-in-production"

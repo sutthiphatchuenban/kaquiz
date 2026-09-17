@@ -61,11 +61,10 @@ export default function NewQuizPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
     const [showPreview, setShowPreview] = useState(false);
-    const [generationProgress, setGenerationProgress] = useState(0);
 
     useEffect(() => {
         checkAuth();
-    }, []);
+    }, [checkAuth]);
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {

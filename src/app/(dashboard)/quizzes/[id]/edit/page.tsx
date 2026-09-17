@@ -127,6 +127,8 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
         if (isAuthenticated && id) {
             fetchQuiz();
         }
+        // fetchQuiz reads the current route id; rerun only when id/auth changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthenticated, id]);
 
     const fetchQuiz = async () => {

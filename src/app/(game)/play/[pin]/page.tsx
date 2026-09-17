@@ -1,5 +1,8 @@
 "use client";
 
+/* Polling effects intentionally depend on stable game identifiers/status only. */
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -110,7 +113,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [myScore, setMyScore] = useState(0);
     const [myRank, setMyRank] = useState(0);
-    const [timerTick, setTimerTick] = useState(0);
+    const [, setTimerTick] = useState(0);
 
     // Validate PIN and fetch game
     useEffect(() => {
@@ -140,7 +143,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             fetchGame();
         });
 
-        const unsubQuestion = onQuestion(({ questionIndex }) => {
+        const unsubQuestion = onQuestion(() => {
             fetchGame();
         });
 
@@ -204,7 +207,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
                 setAnswerStartTime(Date.now());
                 setSelectedAnswer(null);
                 setHasAnswered(false);
-                setAnswerResult(null as any, 0);
+                setAnswerResult(null, 0);
 
                 initializedQuestionRef.current = {
                     index: gameData.currentQuestionIndex,

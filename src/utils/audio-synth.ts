@@ -16,7 +16,9 @@ class AudioSynth {
 
     private init() {
         if (!this.ctx) {
-            this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const AudioContextClass = window.AudioContext ||
+                (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            this.ctx = new AudioContextClass();
             this.masterGain = this.ctx.createGain();
             this.masterGain.connect(this.ctx.destination);
             this.masterGain.gain.value = 0.5; // Default volume
@@ -38,7 +40,9 @@ class AudioSynth {
             try {
                 osc.stop();
                 osc.disconnect();
-            } catch (e) { }
+            } catch {
+                // Oscillator may already be stopped or disconnected.
+            }
         });
         this.bgmOscillators = [];
         if (this.bgmGain) {
@@ -182,7 +186,7 @@ class AudioSynth {
 
         const playChord = () => {
             const t = this.ctx!.currentTime;
-            [440, 554.37, 659.25].forEach((freq, i) => { // A Major
+            [440, 554.37, 659.25].forEach((freq) => { // A Major
                 const osc = this.ctx!.createOscillator();
                 const gain = this.ctx!.createGain();
                 osc.connect(gain);
@@ -211,7 +215,6 @@ class AudioSynth {
         // Cyber Suspense Theme
         const bpm = 120;
         const beatTime = 60 / bpm; // 0.5s
-        let step = 0;
 
         const playBeat = () => {
             if (this.ctx?.state === "suspended") this.ctx.resume();
@@ -278,8 +281,6 @@ class AudioSynth {
 
             hatOsc.start(t + beatTime / 2); // Play on the "&" of the beat
             hatOsc.stop(t + beatTime / 2 + 0.05);
-
-            step++;
         };
 
         this.loops['questionBeat'] = setInterval(playBeat, beatTime * 1000);

@@ -18,6 +18,13 @@ import {
     Users,
 } from "lucide-react";
 
+interface RecentQuiz {
+    id: string;
+    title: string;
+    description: string | null;
+    _count?: { questions: number };
+}
+
 export default function DashboardPage() {
     const router = useRouter();
     const { user, isLoading, isAuthenticated, checkAuth, logout } = useAuthStore();
@@ -28,7 +35,7 @@ export default function DashboardPage() {
         totalPlayers: 0,
         averageScore: 0
     });
-    const [recentQuizzes, setRecentQuizzes] = useState<any[]>([]);
+    const [recentQuizzes, setRecentQuizzes] = useState<RecentQuiz[]>([]);
 
     useEffect(() => {
         checkAuth();
@@ -56,7 +63,7 @@ export default function DashboardPage() {
                         setRecentQuizzes(data.data.recentQuizzes);
                     }
                 } catch (error) {
-                    console.error("Failed to fetch dashboard data");
+                    console.error("Failed to fetch dashboard data", error);
                 }
             };
             fetchDashboardData();

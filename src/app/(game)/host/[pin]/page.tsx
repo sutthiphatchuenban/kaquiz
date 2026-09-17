@@ -1,5 +1,8 @@
 "use client";
 
+/* Polling effects intentionally depend on stable game identifiers/status only. */
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -110,7 +113,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     const [isMusicOn, setIsMusicOn] = useState(true);
 
     // Sound Management
-    const playSound = useCallback((type: "lobby" | "countdown" | "question" | "reveal" | "win" | "join", loop = false) => {
+    const playSound = useCallback((type: "lobby" | "countdown" | "question" | "reveal" | "win" | "join") => {
         if (isMuted) return;
 
         // Map types to synth methods
@@ -260,7 +263,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
     const [isAutoPlay, setIsAutoPlay] = useState(true);
     const [joinUrl, setJoinUrl] = useState("");
-    const [timerTick, setTimerTick] = useState(0);
+    const [, setTimerTick] = useState(0);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -603,6 +606,8 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
                                 {joinUrl ? (
                                     <div className="mt-5 flex items-center gap-4 border-[3px] border-line bg-[var(--cream)] p-3">
+                                        {/* External QR endpoint cannot use Next Image without a fixed remote pattern. */}
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img
                                             src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(joinUrl)}`}
                                             alt="QR Code สำหรับเข้าร่วมเกม"

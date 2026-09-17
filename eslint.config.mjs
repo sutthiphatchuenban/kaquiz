@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "src/generated/**",
+    "socket-server.js",
     "next-env.d.ts",
   ]),
 ]);

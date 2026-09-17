@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
 import { PageHeading } from "@/components/page-heading";
@@ -12,26 +12,13 @@ export default function StartHostPage({ params }: { params: Promise<{ id: string
     const { id: quizId } = use(params);
     const router = useRouter();
     const { isAuthenticated, isLoading: authLoading, checkAuth } = useAuthStore();
-    const [isCreating, setIsCreating] = useState(false);
+    const [isCreating] = useState(true);
 
     useEffect(() => {
         checkAuth();
     }, [checkAuth]);
 
-    useEffect(() => {
-        if (!authLoading && !isAuthenticated) {
-            router.push("/login");
-            return;
-        }
-
-        if (!authLoading && isAuthenticated && !isCreating) {
-            createGameSession();
-        }
-    }, [authLoading, isAuthenticated]);
-
-    const createGameSession = async () => {
-        setIsCreating(true);
-
+    const createGameSession = useCallback(async () => {
         try {
             const res = await fetch("/api/games", {
                 method: "POST",
@@ -52,7 +39,18 @@ export default function StartHostPage({ params }: { params: Promise<{ id: string
             toast.error("เกิดข้อผิดพลาด");
             router.push(`/quizzes/${quizId}/edit`);
         }
-    };
+    }, [quizId, router]);
+
+    useEffect(() => {
+        if (!authLoading && !isAuthenticated) {
+            router.push("/login");
+            return;
+        }
+
+        if (!authLoading && isAuthenticated) {
+            void createGameSession();
+        }
+    }, [authLoading, createGameSession, isAuthenticated, router]);
 
     return (
         <div className="kq-shell-tight">

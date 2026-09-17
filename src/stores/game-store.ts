@@ -76,7 +76,7 @@ interface GameState {
     // Player Actions
     setPlayer: (id: string, nickname: string) => void;
     setHasAnswered: (hasAnswered: boolean) => void;
-    setAnswerResult: (isCorrect: boolean, points: number) => void;
+    setAnswerResult: (isCorrect: boolean | null, points: number) => void;
 
     // Reset
     resetGame: () => void;

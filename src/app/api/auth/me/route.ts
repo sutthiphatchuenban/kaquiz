@@ -52,15 +52,19 @@ export async function GET() {
             success: true,
             data: user,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Get me error:", error);
 
         // JWT-specific errors → real 401
+        const errorCode =
+            typeof error === "object" && error !== null && "code" in error
+                ? String(error.code)
+                : undefined;
         const isAuthError =
-            error?.code === "ERR_JWT_EXPIRED" ||
-            error?.code === "ERR_JWS_INVALID" ||
-            error?.code === "ERR_JWT_CLAIM_VALIDATION_FAILED" ||
-            error?.code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED";
+            errorCode === "ERR_JWT_EXPIRED" ||
+            errorCode === "ERR_JWS_INVALID" ||
+            errorCode === "ERR_JWT_CLAIM_VALIDATION_FAILED" ||
+            errorCode === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED";
 
         if (isAuthError) {
             return NextResponse.json<ApiResponse>(

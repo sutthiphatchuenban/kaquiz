@@ -209,7 +209,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         // Transaction to update question and replace answers
         const updatedQuestion = await prisma.$transaction(async (tx) => {
             // Update question details
-            const q = await tx.question.update({
+            await tx.question.update({
                 where: { id: questionId },
                 data: questionData,
             });
