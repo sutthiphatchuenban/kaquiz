@@ -52,7 +52,7 @@ export function AppHeader() {
         <header className="kq-topbar">
             <div className="kq-shell-wide flex h-20 items-center justify-between gap-3">
                 <div className="flex items-center gap-7">
-                    <Link href="/dashboard" className="kq-brand">
+                    <Link href="/" className="kq-brand">
                         <span className="kq-brand-mark">
                             <ArcadeSprite kind="bot" className="size-7" />
                         </span>
