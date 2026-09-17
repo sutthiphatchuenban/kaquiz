@@ -6,11 +6,42 @@ import { dedupeQuestions } from "@/lib/ai/question-dedupe";
 const MAX_QUESTIONS_PER_BATCH = 10;
 const MAX_PARSE_RETRIES = 2;
 
-/** Total time the request may spend working through the model chain. */
-const GENERATION_BUDGET_MS = 50_000;
+/** Hard cap for a single model call so one slow model cannot stall the chain. */
+const PER_CALL_TIMEOUT_MS = 25_000;
 
-/** The fallback chain may try several models, so allow a longer handler. */
+/** Don't start a model call we cannot finish, plus room to build the response. */
+const MIN_CALL_MS = 6_000;
+
+/**
+ * Function-level limit. This OVERRIDES the project default configured in
+ * Vercel → Settings → Functions, so raising that project default alone does
+ * nothing — change this line too.
+ *
+ * 60s is the Hobby plan ceiling; Pro and Enterprise allow up to 30 minutes.
+ */
 export const maxDuration = 60;
+
+/** Keep this many seconds of `maxDuration` free for cold starts + serialisation. */
+const HEADROOM_S = 15;
+
+/**
+ * Total time the request may spend working through the model chain.
+ *
+ * A function that outlives `maxDuration` is killed by the platform, which then
+ * answers with a plain-text 504 page the client cannot parse, so the budget is
+ * capped just under the function limit.
+ *
+ * Raise AI_GENERATION_BUDGET_MS (in ms) to let slow models try for longer —
+ * the ceiling follows `maxDuration` automatically.
+ */
+const GENERATION_BUDGET_MS = (() => {
+    const hardCap = (maxDuration - HEADROOM_S) * 1000;
+    const configured = Number(process.env.AI_GENERATION_BUDGET_MS);
+    if (!Number.isFinite(configured) || configured <= 0) {
+        return Math.min(45_000, hardCap);
+    }
+    return Math.min(Math.max(configured, 5_000), hardCap);
+})();
 
 
 class EmptyAIResponseError extends Error {
@@ -84,6 +115,8 @@ async function generateBatch({
     batchCount,
     existingQuestions,
     batchNumber,
+    timeoutMs,
+    deadline,
 }: {
     client: OpenAI;
     model: string;
@@ -92,6 +125,8 @@ async function generateBatch({
     batchCount: number;
     existingQuestions: string[];
     batchNumber: number;
+    timeoutMs: number;
+    deadline: number;
 }): Promise<GeneratedQuestion[]> {
     const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
 No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
@@ -103,6 +138,11 @@ If asked to generate N questions, the array must have exactly N elements.`;
         : "";
 
     for (let attempt = 0; attempt <= MAX_PARSE_RETRIES; attempt++) {
+        // Out of time: failing fast beats having the platform kill the request.
+        if (Date.now() + 1_000 >= deadline) {
+            throw new Error("Generation deadline reached before retrying");
+        }
+
         const stricterInstruction = attempt > 0
             ? `\n\nCRITICAL: Return minified JSON only. Do not include any explanation, prefix, suffix, thinking text, or markdown. If you cannot comply, return [] only.`
             : "";
@@ -135,15 +175,19 @@ Rules:
 - Never reword an existing question, and never ask the same fact from another angle
 - Output raw JSON array ONLY - no markdown, no explanation${stricterInstruction}`;
 
-        const completion = await client.chat.completions.create({
-            model,
-            messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: userPrompt },
-            ],
-            temperature: attempt > 0 ? 0.2 : 0.3,
-            max_tokens: 12000,
-        });
+        const completion = await client.chat.completions.create(
+            {
+                model,
+                messages: [
+                    { role: "system", content: SYSTEM_PROMPT },
+                    { role: "user", content: userPrompt },
+                ],
+                temperature: attempt > 0 ? 0.2 : 0.3,
+                max_tokens: 12000,
+            },
+            // Never let one call outlive what is left of the request budget.
+            { timeout: timeoutMs }
+        );
 
         const rawContent = completion.choices[0]?.message?.content;
         const responseText = sanitizeAIResponse(
@@ -222,6 +266,7 @@ async function generateUpToTarget({
     totalTarget,
     existingQuestions,
     alreadyGenerated,
+    deadline,
 }: {
     candidate: ModelCandidate;
     topic: string;
@@ -229,6 +274,7 @@ async function generateUpToTarget({
     totalTarget: number;
     existingQuestions: string[];
     alreadyGenerated: GeneratedQuestion[];
+    deadline: number;
 }): Promise<GeneratedQuestion[]> {
     const client = getClient(candidate.provider);
     const collected: GeneratedQuestion[] = [...alreadyGenerated];
@@ -238,20 +284,39 @@ async function generateUpToTarget({
         Math.ceil((totalTarget - alreadyGenerated.length) / MAX_QUESTIONS_PER_BATCH) + 3;
 
     for (let batch = 0; batch < maxBatches && collected.length < totalTarget; batch++) {
+        const remaining = deadline - Date.now();
+        if (remaining < MIN_CALL_MS) break;
+
         const batchCount = Math.min(totalTarget - collected.length, MAX_QUESTIONS_PER_BATCH);
 
-        const batchQuestions = await generateBatch({
-            client,
-            model: candidate.id,
-            topic,
-            difficulty,
-            batchCount,
-            existingQuestions: [
-                ...existingQuestions,
-                ...collected.map((q) => q.questionText),
-            ],
-            batchNumber: batch + 1,
-        });
+        let batchQuestions: GeneratedQuestion[];
+        try {
+            batchQuestions = await generateBatch({
+                client,
+                model: candidate.id,
+                topic,
+                difficulty,
+                batchCount,
+                existingQuestions: [
+                    ...existingQuestions,
+                    ...collected.map((q) => q.questionText),
+                ],
+                batchNumber: batch + 1,
+                timeoutMs: Math.min(remaining, PER_CALL_TIMEOUT_MS),
+                deadline,
+            });
+        } catch (error) {
+            // A slow extra batch must not throw away questions this model
+            // already produced. Re-throw only when it produced nothing, so the
+            // chain moves on to the next model.
+            if (collected.length > alreadyGenerated.length) {
+                console.warn(
+                    `[AI] ${candidate.id}: stopping early — ${(error as Error).message}`
+                );
+                break;
+            }
+            throw error;
+        }
 
         collected.push(...batchQuestions);
 
@@ -271,6 +336,14 @@ async function generateUpToTarget({
 function describeFailure(failures: ModelFailure[]): string {
     if (failures.length === 0) {
         return "ไม่สามารถสร้างคำถามได้ — กรุณาลองใหม่อีกครั้ง";
+    }
+
+    // Slow models and exhausted budgets are the most common cause, and the
+    // user can act on it (fewer questions, or simply try again).
+    const looksLikeTimeout = (f: ModelFailure) =>
+        /timed? ?out|timeout|aborted|deadline|budget/i.test(f.reason);
+    if (failures.every(looksLikeTimeout)) {
+        return "AI ตอบสนองช้ากว่าเวลาที่กำหนด — ลองลดจำนวนคำถามลง หรือกดสร้างใหม่อีกครั้ง";
     }
 
     // 404/410 mean the catalog advertised a model the provider will not serve.
@@ -300,6 +373,10 @@ export async function POST(req: NextRequest) {
 
         const totalTarget = Math.min(Math.max(parseInt(count.toString() || "5"), 1), 50);
 
+        // Started before the catalog is read, so listing models also counts
+        // against the request budget.
+        const deadline = Date.now() + GENERATION_BUDGET_MS;
+
         // No model is pinned — the chain is read live from the providers.
         const chain = await resolveModelChain();
 
@@ -314,7 +391,6 @@ export async function POST(req: NextRequest) {
         }
 
         const seedExistingQuestions = (existingQuestions as string[]) || [];
-        const deadline = Date.now() + GENERATION_BUDGET_MS;
         const failures: ModelFailure[] = [];
 
         let questions: GeneratedQuestion[] = [];
@@ -323,7 +399,8 @@ export async function POST(req: NextRequest) {
         for (const candidate of chain) {
             if (questions.length >= totalTarget) break;
 
-            if (Date.now() >= deadline) {
+            const remaining = deadline - Date.now();
+            if (remaining < MIN_CALL_MS) {
                 failures.push({ model: candidate.id, reason: "generation budget exhausted" });
                 break;
             }
@@ -336,6 +413,7 @@ export async function POST(req: NextRequest) {
                     totalTarget,
                     existingQuestions: seedExistingQuestions,
                     alreadyGenerated: questions,
+                    deadline,
                 });
 
                 if (generated.length > questions.length) {

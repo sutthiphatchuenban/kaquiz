@@ -35,6 +35,13 @@ const MAX_CANDIDATES_PER_PROVIDER = 5;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * Catalog reads are only a means to an end, so they get a much tighter
+ * timeout than a completion — a slow `/v1/models` must not eat the budget
+ * the generation itself needs.
+ */
+const CATALOG_TIMEOUT_MS = 8_000;
+
+/**
  * Substrings marking a catalog entry as something other than a chat model
  * (embeddings, rerankers, safety classifiers, parsers, image/video tools).
  * These are listed by the providers but cannot answer a chat completion.
@@ -128,7 +135,9 @@ async function fetchCatalog(config: ProviderConfig): Promise<CatalogEntry[]> {
     }
 
     try {
-        const models = await getClient(config.name).models.list();
+        const models = await getClient(config.name).models.list({
+            timeout: CATALOG_TIMEOUT_MS,
+        });
         return models.data as CatalogEntry[];
     } catch (error) {
         console.error(`[AI] ${config.name}: failed to list models —`, (error as Error).message);

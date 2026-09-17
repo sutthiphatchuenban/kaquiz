@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
+import { readApiResponse } from "@/lib/api-response";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Select,
@@ -90,9 +91,9 @@ export default function NewQuizPage() {
                 body: JSON.stringify({ title, description }),
             });
 
-            const data = await res.json();
+            const data = await readApiResponse<{ id: string }>(res);
 
-            if (data.success) {
+            if (data.success && data.data) {
                 toast.success("สร้าง Quiz สำเร็จ!");
                 router.push(`/quizzes/${data.data.id}/edit`);
             } else {
@@ -127,9 +128,12 @@ export default function NewQuizPage() {
                 }),
             });
 
-            const data = await res.json();
+            const data = await readApiResponse<{
+                questions: GeneratedQuestion[];
+                model?: string;
+            }>(res);
 
-            if (data.success && data.data.questions) {
+            if (data.success && data.data?.questions?.length) {
                 setGeneratedQuestions(data.data.questions);
                 setShowPreview(true);
                 toast.success(`สร้างคำถามสำเร็จ ${data.data.questions.length} ข้อ!`, {
@@ -171,9 +175,9 @@ export default function NewQuizPage() {
                 }),
             });
 
-            const quizData = await quizRes.json();
+            const quizData = await readApiResponse<{ id: string }>(quizRes);
 
-            if (!quizData.success) {
+            if (!quizData.success || !quizData.data) {
                 toast.error(quizData.error || "สร้าง Quiz ไม่สำเร็จ");
                 return;
             }
@@ -198,7 +202,7 @@ export default function NewQuizPage() {
                             answers: question.answers,
                         }),
                     });
-                    const qData = await qRes.json();
+                    const qData = await readApiResponse(qRes);
                     if (qData.success) {
                         addedCount++;
                     }
@@ -380,6 +384,10 @@ export default function NewQuizPage() {
                                             <div className="h-3 w-full border-[3px] border-line bg-paper">
                                                 <div className="h-full w-1/3 animate-pulse bg-candy" />
                                             </div>
+                                            <p className="text-center text-xs font-semibold text-muted-foreground">
+                                                ระบบจะลองไล่โมเดลไปเรื่อย ๆ อาจใช้เวลาถึง ~45 วินาที
+                                                กรุณาอย่าปิดหน้านี้
+                                            </p>
                                         </div>
                                     )}
 
