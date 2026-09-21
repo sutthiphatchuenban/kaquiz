@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { resolveModelChain, getClient, type ModelCandidate } from "@/lib/ai/model-resolver";
+import {
+    resolveModelChain,
+    getClient,
+    isReasoningModel,
+    noteModelFailure,
+    noteModelSuccess,
+    type ModelCandidate,
+    type ProviderName,
+} from "@/lib/ai/model-resolver";
 import { dedupeQuestions } from "@/lib/ai/question-dedupe";
 
-const MAX_QUESTIONS_PER_BATCH = 10;
+/**
+ * Questions per model call. Deliberately small: a 15-question request becomes
+ * three short calls instead of two long ones, so a single slow model can no
+ * longer truncate the answer and waste the whole round's budget.
+ */
+const MAX_QUESTIONS_PER_BATCH = 5;
 
 /**
  * Leave enough budget to try a second provider on Hobby. Free models can spend
@@ -22,6 +35,11 @@ const MIN_CALL_MS = 6_000;
  *
  * Keep this in sync with Vercel → Settings → Functions. Vercel's current
  * Hobby limit is 300 seconds when Fluid Compute is enabled.
+ *
+ * This is the platform ceiling, not the target: `GENERATION_BUDGET_MS` below
+ * keeps a single request far away from it. The client asks for another round
+ * when a round comes back short, which is what makes a 15-question request
+ * finish even though no single invocation may live longer than 300 seconds.
  */
 export const maxDuration = 300;
 
@@ -29,11 +47,13 @@ export const maxDuration = 300;
 const HEADROOM_S = 30;
 
 /**
- * Total time the request may spend working through the model chain.
+ * Time one request may spend working through the model chain.
  *
  * A function that outlives `maxDuration` is killed by the platform, which then
  * answers with a plain-text 504 page the client cannot parse, so the budget is
- * capped just under the function limit.
+ * capped just under the function limit. It is also kept well below that limit
+ * on purpose: a request that returns on time can hand its partial result to
+ * the next round, while a request that is killed loses everything it found.
  *
  * Raise AI_GENERATION_BUDGET_MS (in ms) to let slow models try for longer —
  * the ceiling follows `maxDuration` automatically.
@@ -42,7 +62,7 @@ const GENERATION_BUDGET_MS = (() => {
     const hardCap = (maxDuration - HEADROOM_S) * 1000;
     const configured = Number(process.env.AI_GENERATION_BUDGET_MS);
     if (!Number.isFinite(configured) || configured <= 0) {
-        return Math.min(240_000, hardCap);
+        return Math.min(110_000, hardCap);
     }
     return Math.min(Math.max(configured, 5_000), hardCap);
 })();
@@ -113,6 +133,7 @@ function normalizeQuestions(questions: GeneratedQuestion[]): GeneratedQuestion[]
 
 async function generateBatch({
     client,
+    provider,
     model,
     topic,
     difficulty,
@@ -122,6 +143,7 @@ async function generateBatch({
     timeoutMs,
 }: {
     client: OpenAI;
+    provider: ProviderName;
     model: string;
     topic: string;
     difficulty: string;
@@ -172,21 +194,42 @@ Rules:
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
     let completion;
+
+    // Free reasoning models can burn the whole output allowance on hidden
+    // thinking and answer with nothing usable, so the switch is sent for them.
+    // OpenRouter rejects it on endpoints where reasoning is mandatory, hence
+    // the retry below; other providers reject unknown parameters entirely, so
+    // it is scoped to OpenRouter in the first place.
+    const wantsReasoningOff = provider === "openrouter" && isReasoningModel(model);
+
+    const requestBody = (disableReasoning: boolean) => ({
+        model,
+        messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+        ],
+        temperature: 0.3,
+        // The batch is small, so this allowance only has to cover the JSON.
+        max_tokens: Math.min(4_000, Math.max(1_500, batchCount * 500)),
+        ...(disableReasoning ? { reasoning: { enabled: false } } : {}),
+    }) as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+
     try {
-        completion = await client.chat.completions.create(
-            {
-                model,
-                messages: [
-                    { role: "system", content: SYSTEM_PROMPT },
-                    { role: "user", content: userPrompt },
-                ],
-                temperature: 0.3,
-                // 10 short Thai questions fit comfortably. A huge allowance is
-                // harmful with reasoning models because they may never emit JSON.
-                max_tokens: Math.min(6_000, Math.max(1_800, batchCount * 550)),
-            },
-            { timeout: timeoutMs, signal: controller.signal }
-        );
+        try {
+            completion = await client.chat.completions.create(requestBody(wantsReasoningOff), {
+                timeout: timeoutMs,
+                signal: controller.signal,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!wantsReasoningOff || !/reasoning/i.test(message)) throw error;
+
+            console.warn(`[AI] ${model}: reasoning cannot be disabled, retrying anyway — ${message}`);
+            completion = await client.chat.completions.create(requestBody(false), {
+                timeout: timeoutMs,
+                signal: controller.signal,
+            });
+        }
     } finally {
         clearTimeout(abortTimer);
     }
@@ -207,9 +250,10 @@ Rules:
         throw new EmptyAIResponseError();
     }
 
-    if (finishReason === "length" && !responseText.trim().endsWith("]")) {
-        throw new TruncatedAIResponseError();
-    }
+    // `length` means the model ran out of output allowance mid-answer. The
+    // questions before the cut are still good, so they are recovered instead
+    // of thrown away — a short batch is topped up by the next one.
+    const truncated = finishReason === "length" && !responseText.trim().endsWith("]");
 
     try {
         const parsed = parseAIResponse(responseText);
@@ -219,9 +263,16 @@ Rules:
             throw new Error("PARSE_FAILED: No valid questions parsed from AI response");
         }
 
+        if (truncated) {
+            console.warn(
+                `[AI batch ${batchNumber}] ${model} hit the output limit — recovered ${normalized.length}/${batchCount} questions`
+            );
+        }
+
         return normalized;
     } catch (parseError) {
         console.error(`[AI batch ${batchNumber}] Failed to parse AI response:`, parseError);
+        if (truncated) throw new TruncatedAIResponseError();
         throw parseError;
     }
 }
@@ -284,6 +335,7 @@ async function generateUpToTarget({
         try {
             batchQuestions = await generateBatch({
                 client,
+                provider: candidate.provider,
                 model: candidate.id,
                 topic,
                 difficulty,
@@ -339,14 +391,14 @@ function describeFailure(failures: ModelFailure[]): string {
     // 404/410 mean the catalog advertised a model the provider will not serve.
     const providerRejectStatuses = new Set([401, 402, 403, 404, 410]);
     if (failures.every((f) => f.status !== undefined && providerRejectStatuses.has(f.status))) {
-        return "AI Provider ปฏิเสธการเชื่อมต่อทุกโมเดล (API Key ไม่ถูกต้อง/หมดสิทธิ์) — กรุณาตรวจสอบ OPENROUTER_API_KEY และ NVIDIA_API_KEY";
+        return `AI Provider ปฏิเสธการเชื่อมต่อทุกโมเดล (${failures.length} โมเดล) — ตรวจสอบ API Key ของ Gemini / OpenRouter / NVIDIA / Groq / Cerebras / Mistral`;
     }
 
     if (failures.every((f) => f.status === 429)) {
         return "AI ทุกตัวถูกเรียกใช้งานหนักเกินไปในขณะนี้ — กรุณาลองใหม่อีกครั้งในอีกสักครู่";
     }
 
-    return `สร้างคำถามไม่สำเร็จ — กรุณาลองใหม่อีกครั้ง (ลองแล้ว ${failures.length} โมเดล)`;
+    return `สร้างคำถามไม่สำเร็จ — ลองแล้ว ${failures.length} โมเดลจากทุก Provider กรุณาลองใหม่อีกครั้ง หรือเพิ่ม API Key ของ Provider อื่นใน Environment Variables`;
 }
 
 export async function POST(req: NextRequest) {
@@ -367,6 +419,13 @@ export async function POST(req: NextRequest) {
         // against the request budget.
         const deadline = Date.now() + GENERATION_BUDGET_MS;
 
+        // Questions the client already holds from earlier rounds. Passing them
+        // back in is what lets a short round be topped up without repeats.
+        const seedExistingQuestions = (Array.isArray(existingQuestions) ? existingQuestions : [])
+            .filter((question): question is string => typeof question === "string")
+            .map((question) => question.trim())
+            .filter(Boolean);
+
         // No model is pinned — the chain is read live from the providers.
         const chain = await resolveModelChain();
 
@@ -374,13 +433,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 {
                     success: false,
-                    error: "ไม่พบ AI Model ที่พร้อมใช้งาน — กรุณาตรวจสอบ API Key ของ OpenRouter / NVIDIA",
+                    error: "ไม่พบ AI Model ที่พร้อมใช้งาน — กรุณาตรวจสอบ API Key ของ Gemini / OpenRouter / NVIDIA / Groq / Cerebras / Mistral",
                 },
                 { status: 503 }
             );
         }
 
-        const seedExistingQuestions = (existingQuestions as string[]) || [];
         const failures: ModelFailure[] = [];
 
         let questions: GeneratedQuestion[] = [];
@@ -409,6 +467,11 @@ export async function POST(req: NextRequest) {
                 if (generated.length > questions.length) {
                     questions = generated;
                     usedCandidate = candidate;
+                    noteModelSuccess(candidate);
+                } else {
+                    // The model answered without adding anything new. Bench it
+                    // briefly so the next round does not pay for it again.
+                    noteModelFailure(candidate, "model returned no new questions");
                 }
             } catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
@@ -418,6 +481,7 @@ export async function POST(req: NextRequest) {
                     reason,
                     status: (error as { status?: number }).status,
                 });
+                noteModelFailure(candidate, reason);
             }
         }
 
@@ -428,12 +492,19 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // `complete` and `remaining` are what the client checks before asking
+        // for another round: a short answer is never presented as a finished one.
+        const remaining = Math.max(0, totalTarget - questions.length);
+
         return NextResponse.json({
             success: true,
             data: {
                 questions,
                 topic,
+                requested: totalTarget,
                 generatedCount: questions.length,
+                complete: remaining === 0,
+                remaining,
                 model: usedCandidate?.id,
                 provider: usedCandidate?.provider,
                 fallbacksUsed: failures.length,

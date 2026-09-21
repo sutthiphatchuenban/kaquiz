@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
 import { readApiResponse } from "@/lib/api-response";
+import {
+    generateQuestionsUntilComplete,
+    MAX_GENERATION_ROUNDS,
+    type GeneratedQuestion,
+    type GenerationProgress,
+} from "@/lib/ai/client-generator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Select,
@@ -23,18 +29,6 @@ import {
     Brain
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface GeneratedQuestion {
-    questionText: string;
-    answers: {
-        answerText: string;
-        isCorrect: boolean;
-        color: "red" | "blue" | "green" | "yellow";
-        order: number;
-    }[];
-    timeLimit: number;
-    points: number;
-}
 
 const getColorClass = (color: string) => {
     const colors: Record<string, string> = {
@@ -60,7 +54,20 @@ export default function NewQuizPage() {
     const [aiDifficulty, setAiDifficulty] = useState("medium");
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
+    const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
     const [showPreview, setShowPreview] = useState(false);
+
+    // Remembers the metadata we wrote ourselves, so a top-up round can correct
+    // the question count without overwriting anything the user typed.
+    const autoTitle = useRef<string | null>(null);
+    const autoDescription = useRef<string | null>(null);
+
+    // What the user asked for, and how much of it is still missing.
+    const aiTargetCount = Math.max(1, Math.min(50, parseInt(aiQuestionCount, 10) || 5));
+    const missingQuestionCount = Math.max(0, aiTargetCount - generatedQuestions.length);
+    const progressPercent = generationProgress
+        ? Math.max(8, Math.round((generationProgress.done / generationProgress.target) * 100))
+        : 8;
 
     useEffect(() => {
         checkAuth();
@@ -106,63 +113,97 @@ export default function NewQuizPage() {
     };
 
     // AI Generation
-    const handleGenerateQuestions = async () => {
+    //
+    // Runs in rounds. Each round is its own serverless invocation, so hitting
+    // the platform's function limit no longer ends the job: the server returns
+    // whatever it produced plus what is still missing, and the next round asks
+    // for the remainder. Generation only stops once the count is complete (or
+    // every model has been tried twice without adding anything).
+    const handleGenerateQuestions = async (
+        { continueExisting = false }: { continueExisting?: boolean } = {}
+    ) => {
         if (!aiTopic.trim()) {
             toast.error("กรุณากรอกหัวข้อที่ต้องการสร้างคำถาม");
             return;
         }
+        if (isGenerating) return;
+
+        const topic = aiTopic.trim();
+        const difficulty = aiDifficulty;
+        const target = aiTargetCount;
+        const existing = continueExisting ? generatedQuestions : [];
 
         setIsGenerating(true);
-        setGeneratedQuestions([]);
-        setShowPreview(false);
+        setGeneratedQuestions(existing);
+        setShowPreview(existing.length > 0);
+        setGenerationProgress({
+            done: existing.length,
+            target,
+            round: 1,
+            maxRounds: MAX_GENERATION_ROUNDS,
+        });
 
         try {
-            const res = await fetch("/api/ai/generate-questions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    topic: aiTopic,
-                    count: aiQuestionCount,
-                    difficulty: aiDifficulty,
-                }),
+            const result = await generateQuestionsUntilComplete({
+                topic,
+                difficulty,
+                target,
+                existingQuestions: existing,
+                onProgress: setGenerationProgress,
             });
 
-            const data = await readApiResponse<{
-                questions: GeneratedQuestion[];
-                model?: string;
-            }>(res);
+            if (result.questions.length === 0) {
+                toast.error(result.error || "สร้างคำถามไม่สำเร็จ", { duration: 8000 });
+                return;
+            }
 
-            if (data.success && data.data?.questions?.length) {
-                const generatedCount = data.data.questions.length;
-                const topic = aiTopic.trim();
-                const difficultyLabels: Record<string, string> = {
-                    easy: "ง่าย",
-                    medium: "ปานกลาง",
-                    hard: "ยาก",
-                };
-                const difficultyLabel = difficultyLabels[aiDifficulty] || aiDifficulty;
+            const generatedCount = result.questions.length;
+            const difficultyLabels: Record<string, string> = {
+                easy: "ง่าย",
+                medium: "ปานกลาง",
+                hard: "ยาก",
+            };
+            const difficultyLabel = difficultyLabels[difficulty] || difficulty;
 
-                setGeneratedQuestions(data.data.questions);
-                setShowPreview(true);
-                // Fill metadata for the user, but preserve anything they entered.
-                setTitle((current) => current.trim() || `แบบทดสอบ ${topic} ${generatedCount} ข้อ`);
-                setDescription(
-                    (current) => current.trim() ||
-                        `คำถามเกี่ยวกับ ${topic} จำนวน ${generatedCount} ข้อ ระดับ${difficultyLabel} แบบปรนัย 4 ตัวเลือก`
-                );
-                toast.success(`สร้างคำถามสำเร็จ ${generatedCount} ข้อ!`, {
-                    description: data.data.model
-                        ? `ใช้โมเดล ${data.data.model} — ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ`
-                        : "ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ",
+            setGeneratedQuestions(result.questions);
+            setShowPreview(true);
+
+            // Fill metadata for the user, but preserve anything they entered.
+            const nextTitle = `แบบทดสอบ ${topic} ${generatedCount} ข้อ`;
+            const nextDescription =
+                `คำถามเกี่ยวกับ ${topic} จำนวน ${generatedCount} ข้อ ระดับ${difficultyLabel} แบบปรนัย 4 ตัวเลือก`;
+
+            setTitle((current) =>
+                !current.trim() || current === autoTitle.current ? nextTitle : current
+            );
+            setDescription((current) =>
+                !current.trim() || current === autoDescription.current ? nextDescription : current
+            );
+            autoTitle.current = nextTitle;
+            autoDescription.current = nextDescription;
+
+            const modelNote = result.models.length > 0
+                ? `ใช้โมเดล ${result.models.join(", ")}`
+                : "ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ";
+
+            if (result.complete) {
+                toast.success(`สร้างคำถามครบ ${generatedCount} ข้อแล้ว!`, {
+                    description: `${modelNote} — ตรวจสอบและแก้ไขคำถามด้านล่างได้เลยครับ`,
                 });
             } else {
-                toast.error(data.error || "สร้างคำถามไม่สำเร็จ", { duration: 8000 });
+                toast.warning(`ได้คำถาม ${generatedCount}/${target} ข้อ — โมเดลที่เหลือยังไม่ตอบ`, {
+                    description:
+                        result.error ||
+                        "กด \"สร้างเพิ่ม\" เพื่อให้ระบบทำต่อจนครบจำนวนที่เลือกได้",
+                    duration: 10000,
+                });
             }
         } catch (error) {
             console.error("AI Generation Error:", error);
             toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อ AI");
         } finally {
             setIsGenerating(false);
+            setGenerationProgress(null);
         }
     };
 
@@ -393,21 +434,26 @@ export default function NewQuizPage() {
                                         <div className="animate-bounce-in grid gap-2" aria-live="polite">
                                             <p className="flex items-center justify-center gap-2 text-sm font-bold text-ink">
                                                 <Loader2 className="size-4 animate-spin" />
-                                                AI กำลังสร้างคำถามให้คุณ...
+                                                {generationProgress
+                                                    ? `กำลังสร้างคำถาม ${generationProgress.done}/${generationProgress.target} ข้อ (รอบที่ ${generationProgress.round}/${generationProgress.maxRounds})`
+                                                    : "AI กำลังสร้างคำถามให้คุณ..."}
                                             </p>
                                             <div className="h-3 w-full border-[3px] border-line bg-paper">
-                                                <div className="h-full w-1/3 animate-pulse bg-candy" />
+                                                <div
+                                                    className="h-full bg-candy transition-[width] duration-500"
+                                                    style={{ width: `${progressPercent}%` }}
+                                                />
                                             </div>
                                             <p className="text-center text-xs font-semibold text-muted-foreground">
-                                                ระบบจะลองไล่โมเดลไปเรื่อย ๆ อาจใช้เวลาถึง ~45 วินาที
-                                                กรุณาอย่าปิดหน้านี้
+                                                ระบบจะไล่โมเดลสำรองให้อัตโนมัติ และสร้างต่อจนครบจำนวนที่เลือก
+                                                ถ้าโมเดลตอบช้าจะแบ่งสร้างเป็นหลายรอบ กรุณาอย่าปิดหน้านี้
                                             </p>
                                         </div>
                                     )}
 
                                     <button
                                         type="button"
-                                        onClick={handleGenerateQuestions}
+                                        onClick={() => handleGenerateQuestions()}
                                         disabled={isGenerating || !aiTopic.trim()}
                                         className="kq-btn kq-btn-purple kq-btn-block kq-btn-lg"
                                     >
@@ -469,17 +515,31 @@ export default function NewQuizPage() {
                                             <span className="kq-stat-icon">
                                                 <CheckCircle2 className="size-5" strokeWidth={2.5} />
                                             </span>
-                                            ตัวอย่างคำถามที่สร้าง ({generatedQuestions.length} ข้อ)
+                                            ตัวอย่างคำถามที่สร้าง ({generatedQuestions.length}
+                                            {missingQuestionCount > 0 ? `/${aiTargetCount}` : ""} ข้อ)
                                         </h3>
-                                        <button
-                                            type="button"
-                                            onClick={handleGenerateQuestions}
-                                            disabled={isGenerating}
-                                            className="kq-btn kq-btn-sm kq-btn-paper"
-                                        >
-                                            <Wand2 className="size-4" />
-                                            สร้างใหม่
-                                        </button>
+                                        <div className="flex flex-wrap gap-2">
+                                            {missingQuestionCount > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleGenerateQuestions({ continueExisting: true })}
+                                                    disabled={isGenerating || isLoading}
+                                                    className="kq-btn kq-btn-sm kq-btn-purple"
+                                                >
+                                                    <Wand2 className="size-4" />
+                                                    สร้างเพิ่มอีก {missingQuestionCount} ข้อ
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleGenerateQuestions()}
+                                                disabled={isGenerating || isLoading}
+                                                className="kq-btn kq-btn-sm kq-btn-paper"
+                                            >
+                                                <Wand2 className="size-4" />
+                                                สร้างใหม่
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="kq-scroll max-h-96 space-y-3 pr-2">
@@ -521,7 +581,7 @@ export default function NewQuizPage() {
                                                 setShowPreview(false);
                                                 setGeneratedQuestions([]);
                                             }}
-                                            disabled={isLoading}
+                                            disabled={isLoading || isGenerating}
                                             className="kq-btn kq-btn-paper flex-1"
                                         >
                                             ยกเลิก
@@ -529,7 +589,7 @@ export default function NewQuizPage() {
                                         <button
                                             type="button"
                                             onClick={handleCreateWithAI}
-                                            disabled={isLoading}
+                                            disabled={isLoading || isGenerating}
                                             className="kq-btn kq-btn-yellow flex-1"
                                         >
                                             {isLoading ? (

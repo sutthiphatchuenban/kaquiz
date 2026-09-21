@@ -23,7 +23,9 @@
 - เพิ่มตัวเลือกและกำหนดคำตอบที่ถูกต้อง
 - อัปโหลดรูปประกอบคำถามผ่าน UploadThing
 - สร้างชุดคำถามภาษาไทยด้วย AI พร้อม preview ก่อนบันทึก
-- AI รองรับ model fallback ระหว่าง OpenRouter และ NVIDIA
+- AI รองรับ model fallback ข้าม Provider (Gemini, OpenRouter, NVIDIA, Groq, Cerebras, Mistral) โดยเพิ่ม Provider ใหม่ได้แค่ใส่ API Key
+- Gemini ใช้โมเดล `gemini-flash-lite-latest` และสลับใช้คีย์สำรองได้เมื่อคีย์แรกติดลิมิต
+- สร้างคำถามแบบหลายรอบ: ถ้าได้ไม่ครบจำนวนที่เลือก ระบบจะขอเพิ่มจนครบ ไม่หยุดที่จำนวนที่โมเดลแรกตอบ
 - ตรวจและตัดคำถามซ้ำจากผลลัพธ์ AI
 - กรอกชื่อและคำอธิบาย Quiz จากผล AI ให้อัตโนมัติ
 
@@ -102,7 +104,7 @@ API Admin ตรวจสิทธิ์จาก HTTP-only cookie และต�
 - React Hook Form และ Zod
 - JWT (`jose`) และ bcryptjs
 - UploadThing
-- OpenAI-compatible SDK สำหรับ OpenRouter/NVIDIA
+- OpenAI-compatible SDK สำหรับ OpenRouter/NVIDIA/Gemini/Groq/Cerebras/Mistral
 - Vercel
 
 > `socket.io` และ standalone socket server ยังคงอยู่ใน repository แต่ frontend ปัจจุบันใช้ polling และ `useSocket()` เป็น compatibility layer แบบ no-op
@@ -122,12 +124,22 @@ ADMIN_EMAILS="admin@example.com"
 # Upload images
 UPLOADTHING_TOKEN="..."
 
-# AI: ตั้งอย่างน้อยหนึ่ง provider
+# AI: ตั้งอย่างน้อยหนึ่ง provider (ใส่เพิ่มได้เพื่อให้ fallback ยาวขึ้น)
+# Gemini คือ provider ตัวแรก และใช้โมเดล gemini-flash-lite-latest เท่านั้น
+GEMINI_API_KEY="..."
+GEMINI_API_KEY2="..."
+GEMINI_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai"
 OPENROUTER_API_KEY="..."
 NVIDIA_API_KEY="..."
+GROQ_API_KEY="..."
+CEREBRAS_API_KEY="..."
+MISTRAL_API_KEY="..."
 
-# Optional; default 240000 ms
-AI_GENERATION_BUDGET_MS="240000"
+# Optional; default 110000 ms (งบเวลาต่อนรอบ แล้วค่อยขอรอบใหม่)
+AI_GENERATION_BUDGET_MS="110000"
+
+# Optional; ลำดับ Provider เช่น "groq,openrouter,nvidia"
+AI_PROVIDER_ORDER="gemini,gemini2,openrouter,nvidia,groq,cerebras,mistral"
 ```
 
 รายละเอียด:
@@ -138,9 +150,33 @@ AI_GENERATION_BUDGET_MS="240000"
 | `JWT_SECRET` | ลงนามและตรวจสอบ auth token ควรเป็นค่าสุ่มยาวอย่างน้อย 32 bytes |
 | `ADMIN_EMAILS` | รายชื่ออีเมล Admin คั่นด้วย comma บัญชีต้องสมัครในระบบแล้ว |
 | `UPLOADTHING_TOKEN` | จำเป็นเมื่อใช้อัปโหลดรูป |
-| `OPENROUTER_API_KEY` | ใช้สร้างคำถาม AI ผ่าน OpenRouter |
+| `OPENROUTER_API_KEY` | ใช้สร้างคำถาม AI ผ่าน OpenRouter (free models) |
 | `NVIDIA_API_KEY` | AI provider สำรองหรือ provider หลักอีกตัว |
-| `AI_GENERATION_BUDGET_MS` | งบเวลารวมของ model fallback หน่วยมิลลิวินาที |
+| `GEMINI_API_KEY` | Google Gemini — provider ตัวแรกของ chain (แนะนำให้ใส่) |
+| `GEMINI_API_KEY2` | คีย์สำรองของ Gemini สำหรับโมเดลเดียวกัน (free tier จำกัดโควตาต่อคีย์) |
+| `GEMINI_BASE_URL` | endpoint ของ Gemini (ค่าเริ่มต้น `https://generativelanguage.googleapis.com/v1beta/openai`) |
+| `GROQ_API_KEY` | Groq (เร็วมาก, มี free tier) — ไม่ใส่ก็ได้ |
+| `CEREBRAS_API_KEY` | Cerebras (free tier) — ไม่ใส่ก็ได้ |
+| `MISTRAL_API_KEY` | Mistral (free tier) — ไม่ใส่ก็ได้ |
+| `AI_GENERATION_BUDGET_MS` | งบเวลาต่อหนึ่ง request ของ model fallback หน่วยมิลลิวินาที |
+| `AI_PROVIDER_ORDER` | ลำดับ Provider ที่จะลอง คั่นด้วย comma |
+
+### การสร้างคำถามด้วย AI
+
+`POST /api/ai/generate-questions` รับ `topic`, `count`, `difficulty` และ `existingQuestions` (คำถามที่มีอยู่แล้ว
+เพื่อไม่ให้ AI สร้างซ้ำ) แล้วตอบกลับพร้อมฟิลด์ `complete` กับ `remaining`
+
+ลำดับ Provider เริ่มต้น: `gemini` → `gemini2` → `openrouter` → `nvidia` → `groq` → `cerebras` → `mistral`
+โดย Provider ที่ไม่ได้ตั้ง API Key จะถูกข้าม และเปลี่ยนลำดับได้ด้วย `AI_PROVIDER_ORDER`
+
+Gemini เป็นแบบ **pin model** คือใช้ `gemini-flash-lite-latest` เท่านั้น ไม่ต้องยิงไปอ่าน catalog
+ส่วน Provider อื่นจะอ่านรายการโมเดลจาก `/v1/models` แล้วจัดอันดับ (โมเดลสาย reasoning / code
+จะถูกจัดไว้ท้ายสุด)
+
+ตัว route จะไล่ model chain ของทุก Provider ที่ตั้ง API Key ไว้ โดยตัด model ที่เพิ่งพังออกชั่วคราว
+ถ้างบเวลาต่อรอบหมดก่อนได้ครบ ระบบจะตอบกลับเท่าที่ได้ พร้อมบอกว่าขาดอีกกี่ข้อ แล้วฝั่ง client
+(`src/lib/ai/client-generator.ts`) จะยิง request ใหม่เพื่อสร้างส่วนที่เหลือจนครบ
+วิธีนี้ทำให้จำนวนคำถามที่เลือกไม่ถูกจำกัดด้วยเวลาสูงสุดของ serverless function
 
 ## เริ่มต้นพัฒนา
 
@@ -189,6 +225,8 @@ prisma migrate deploy && next build
 2. เพิ่ม environment variables ที่ต้องใช้
 3. ตั้ง Function Max Duration เป็น 300 วินาทีสำหรับ AI generation
 4. Deploy หรือ Redeploy
+
+การสร้างคำถามด้วย AI ถูกออกแบบให้ทนต่อข้อจำกัด 300 วินาทีของ Vercel แล้ว แต่ละ request จำกัดเวลาตัวเองไว้ที่ `AI_GENERATION_BUDGET_MS` (ค่าเริ่มต้น 110 วินาที) แล้วตอบกลับพร้อมจำนวนที่ยังขาด ฝั่ง client จะยิงรอบใหม่เพื่อสร้างต่อจนครบจำนวนที่เลือก จึงไม่จำเป็นต้องพยายามยัดทุกคำถามไว้ใน function เดียว
 
 Production build จะใช้ `prisma migrate deploy` ก่อน Next.js build โดยอัตโนมัติ ดูรายละเอียดเพิ่มเติมใน [VERCEL_DEPLOY.md](VERCEL_DEPLOY.md)
 
