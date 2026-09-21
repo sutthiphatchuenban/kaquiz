@@ -65,9 +65,6 @@ export default function NewQuizPage() {
     // What the user asked for, and how much of it is still missing.
     const aiTargetCount = Math.max(1, Math.min(50, parseInt(aiQuestionCount, 10) || 5));
     const missingQuestionCount = Math.max(0, aiTargetCount - generatedQuestions.length);
-    const progressPercent = generationProgress
-        ? Math.max(8, Math.round((generationProgress.done / generationProgress.target) * 100))
-        : 8;
 
     useEffect(() => {
         checkAuth();
@@ -169,9 +166,9 @@ export default function NewQuizPage() {
             setShowPreview(true);
 
             // Fill metadata for the user, but preserve anything they entered.
-            const nextTitle = `แบบทดสอบ ${topic} ${generatedCount} ข้อ`;
-            const nextDescription =
-                `คำถามเกี่ยวกับ ${topic} จำนวน ${generatedCount} ข้อ ระดับ${difficultyLabel} แบบปรนัย 4 ตัวเลือก`;
+            const nextTitle = result.title || `แบบทดสอบ ${generatedCount} ข้อ`;
+            const nextDescription = result.description ||
+                `แบบทดสอบระดับ${difficultyLabel} จำนวน ${generatedCount} ข้อ แบบปรนัย 4 ตัวเลือก`;
 
             setTitle((current) =>
                 !current.trim() || current === autoTitle.current ? nextTitle : current
@@ -214,8 +211,9 @@ export default function NewQuizPage() {
             return;
         }
 
-        const quizTitle = title.trim() || `Quiz: ${aiTopic}`;
-        const quizDescription = description.trim() || `คำถามเกี่ยวกับ ${aiTopic} จำนวน ${generatedQuestions.length} ข้อ`;
+        const quizTitle = title.trim() || `แบบทดสอบ ${generatedQuestions.length} ข้อ`;
+        const quizDescription = description.trim() ||
+            `แบบทดสอบปรนัย 4 ตัวเลือก จำนวน ${generatedQuestions.length} ข้อ`;
 
         setIsLoading(true);
 
@@ -434,19 +432,20 @@ export default function NewQuizPage() {
                                         <div className="animate-bounce-in grid gap-2" aria-live="polite">
                                             <p className="flex items-center justify-center gap-2 text-sm font-bold text-ink">
                                                 <Loader2 className="size-4 animate-spin" />
-                                                {generationProgress
-                                                    ? `กำลังสร้างคำถาม ${generationProgress.done}/${generationProgress.target} ข้อ (รอบที่ ${generationProgress.round}/${generationProgress.maxRounds})`
-                                                    : "AI กำลังสร้างคำถามให้คุณ..."}
+                                                {generationProgress && generationProgress.round > 1
+                                                    ? `กำลังเติมคำถามที่ยังขาด ${generationProgress.target - generationProgress.done} ข้อ (รอบสำรอง ${generationProgress.round - 1})`
+                                                    : `AI กำลังสร้างคำถาม ${aiTargetCount} ข้อในครั้งเดียว...`}
                                             </p>
-                                            <div className="h-3 w-full border-[3px] border-line bg-paper">
-                                                <div
-                                                    className="h-full bg-candy transition-[width] duration-500"
-                                                    style={{ width: `${progressPercent}%` }}
-                                                />
+                                            <div
+                                                className="relative h-3 w-full overflow-hidden border-[3px] border-line bg-paper"
+                                                role="progressbar"
+                                                aria-label={`กำลังสร้างคำถาม ${aiTargetCount} ข้อ`}
+                                            >
+                                                <div className="kq-indeterminate-progress absolute inset-y-0 w-1/3 bg-candy" />
                                             </div>
                                             <p className="text-center text-xs font-semibold text-muted-foreground">
-                                                ระบบจะไล่โมเดลสำรองให้อัตโนมัติ และสร้างต่อจนครบจำนวนที่เลือก
-                                                ถ้าโมเดลตอบช้าจะแบ่งสร้างเป็นหลายรอบ กรุณาอย่าปิดหน้านี้
+                                                AI กำลังเขียนคำถาม ตัวเลือก และตรวจคำถามซ้ำ โดยทั่วไปใช้เวลาประมาณ 20–60 วินาที
+                                                ระบบจะลองโมเดลสำรองให้อัตโนมัติเมื่อโมเดลหลักไม่ตอบ
                                             </p>
                                         </div>
                                     )}
@@ -477,11 +476,11 @@ export default function NewQuizPage() {
                                 <div className="grid gap-4">
                                     <div>
                                         <label htmlFor="aiTitle" className="kq-label">
-                                            ชื่อ Quiz (ไม่บังคับ ระบบจะใช้ชื่อหัวข้อแทน)
+                                            ชื่อ Quiz (AI สร้างให้ แก้ไขได้)
                                         </label>
                                         <input
                                             id="aiTitle"
-                                            placeholder={`Quiz: ${aiTopic}`}
+                                            placeholder="AI จะสร้างชื่อ Quiz ให้"
                                             value={title}
                                             onChange={(e) => setTitle(e.target.value)}
                                             disabled={isLoading}
@@ -495,7 +494,7 @@ export default function NewQuizPage() {
                                         </label>
                                         <textarea
                                             id="aiDescription"
-                                            placeholder={`คำถามเกี่ยวกับ ${aiTopic} จำนวน ${generatedQuestions.length} ข้อ`}
+                                            placeholder="AI จะสร้างคำอธิบายเนื้อหาให้"
                                             value={description}
                                             onChange={(e) => setDescription(e.target.value)}
                                             disabled={isLoading}

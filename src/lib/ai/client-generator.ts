@@ -41,6 +41,8 @@ export interface GenerationResult {
     complete: boolean;
     rounds: number;
     models: string[];
+    title?: string;
+    description?: string;
     /** Reason the run stopped short, when it did. */
     error?: string;
 }
@@ -65,6 +67,8 @@ interface GeneratePayload {
     questions?: GeneratedQuestion[];
     remaining?: number;
     model?: string;
+    title?: string;
+    description?: string;
 }
 
 export async function generateQuestionsUntilComplete({
@@ -89,6 +93,8 @@ export async function generateQuestionsUntilComplete({
     let rounds = 0;
     let roundsWithoutProgress = 0;
     let error: string | undefined;
+    let generatedTitle: string | undefined;
+    let generatedDescription: string | undefined;
 
     while (collected.length < goal && rounds < MAX_GENERATION_ROUNDS) {
         if (Date.now() - startedAt > TOTAL_TIME_LIMIT_MS) {
@@ -140,6 +146,8 @@ export async function generateQuestionsUntilComplete({
         }
 
         if (payload.model) models.add(payload.model);
+        generatedTitle ||= payload.title;
+        generatedDescription ||= payload.description;
 
         const before = collected.length;
         if (payload.questions?.length) {
@@ -169,6 +177,8 @@ export async function generateQuestionsUntilComplete({
         complete: collected.length >= goal,
         rounds,
         models: [...models],
+        title: generatedTitle,
+        description: generatedDescription,
         error,
     };
 }

@@ -8,7 +8,9 @@ const source = readFileSync("src/lib/ai/client-generator.ts", "utf8")
 
 writeFileSync("scripts/_tmp-generator.mts", source);
 
-const { generateQuestionsUntilComplete, MAX_GENERATION_ROUNDS } = await import("./_tmp-generator.mts");
+const temporaryGeneratorPath = "./_tmp-generator.mts";
+const { generateQuestionsUntilComplete, MAX_GENERATION_ROUNDS } =
+    await import(temporaryGeneratorPath);
 
 interface Scenario {
     name: string;
@@ -90,7 +92,9 @@ for (const scenario of scenarios) {
         target: scenario.target,
     });
 
-    const unique = new Set(result.questions.map((q) => q.questionText)).size;
+    const unique = new Set(
+        result.questions.map((question: { questionText: string }) => question.questionText)
+    ).size;
     const expected = scenario.name.includes("nothing usable") || scenario.fail ? true : result.complete;
 
     const ok =

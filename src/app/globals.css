@@ -1054,6 +1054,19 @@
   }
 }
 
+@keyframes kq-indeterminate-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.kq-indeterminate-progress {
+  animation: kq-indeterminate-progress 1.4s ease-in-out infinite;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

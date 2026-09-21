@@ -9,14 +9,8 @@ import {
     type ModelCandidate,
     type ProviderName,
 } from "@/lib/ai/model-resolver";
-import { dedupeQuestions } from "@/lib/ai/question-dedupe";
+import { areQuestionsSimilar, dedupeQuestions } from "@/lib/ai/question-dedupe";
 
-/**
- * Questions per model call. Deliberately small: a 15-question request becomes
- * three short calls instead of two long ones, so a single slow model can no
- * longer truncate the answer and waste the whole round's budget.
- */
-const MAX_QUESTIONS_PER_BATCH = 5;
 
 /**
  * Leave enough budget to try a second provider on Hobby. Free models can spend
@@ -151,10 +145,11 @@ async function generateBatch({
     existingQuestions: string[];
     batchNumber: number;
     timeoutMs: number;
-}): Promise<GeneratedQuestion[]> {
-    const SYSTEM_PROMPT = `You are a quiz question generator. You MUST respond with ONLY a valid JSON array and nothing else.
-No markdown, no code fences, no explanation, no prose. Just a raw JSON array starting with [ and ending with ].
-If asked to generate N questions, the array must have exactly N elements.`;
+}): Promise<GeneratedQuizContent> {
+    const SYSTEM_PROMPT = `You are a quiz content generator. You MUST respond with ONLY one valid JSON object and nothing else.
+No markdown, no code fences, no explanation, and no prose outside the JSON.
+Create a concise Thai title and description that summarize the actual quiz content; never copy the user's prompt verbatim.
+If asked to generate N questions, the questions array must have exactly N elements.`;
 
     const existingList = existingQuestions || [];
     const avoidSection = existingList.length > 0
@@ -166,20 +161,24 @@ If asked to generate N questions, the array must have exactly N elements.`;
     const userPrompt = `Generate ${batchCount} quiz questions about: "${topic}"
 Difficulty: ${difficulty}${avoidSection}
 
-Output ONLY this JSON array structure (no other text):
-[
-  {
-    "questionText": "คำถาม (ภาษาไทย, ไม่เกิน 100 ตัวอักษร)",
-    "answers": [
-      {"answerText": "ตัวเลือก 1 (ไม่เกิน 50 ตัวอักษร)", "isCorrect": true, "color": "red", "order": 0},
-      {"answerText": "ตัวเลือก 2", "isCorrect": false, "color": "blue", "order": 1},
-      {"answerText": "ตัวเลือก 3", "isCorrect": false, "color": "green", "order": 2},
-      {"answerText": "ตัวเลือก 4", "isCorrect": false, "color": "yellow", "order": 3}
-    ],
-    "timeLimit": 20,
-    "points": 1000
-  }
-]
+Output ONLY this JSON object structure (no other text):
+{
+  "title": "ชื่อแบบทดสอบภาษาไทยที่กระชับ ไม่เกิน 80 ตัวอักษร",
+  "description": "คำอธิบายเนื้อหาแบบทดสอบภาษาไทย 1-2 ประโยค ไม่เกิน 300 ตัวอักษร",
+  "questions": [
+    {
+      "questionText": "คำถาม (ภาษาไทย, ไม่เกิน 100 ตัวอักษร)",
+      "answers": [
+        {"answerText": "ตัวเลือก 1 (ไม่เกิน 50 ตัวอักษร)", "isCorrect": true, "color": "red", "order": 0},
+        {"answerText": "ตัวเลือก 2", "isCorrect": false, "color": "blue", "order": 1},
+        {"answerText": "ตัวเลือก 3", "isCorrect": false, "color": "green", "order": 2},
+        {"answerText": "ตัวเลือก 4", "isCorrect": false, "color": "yellow", "order": 3}
+      ],
+      "timeLimit": 20,
+      "points": 1000
+    }
+  ]
+}
 
 Rules:
 - Exactly 4 answers per question
@@ -189,7 +188,9 @@ Rules:
 - Return EXACTLY ${batchCount} questions
 - Each question must be UNIQUE and test a completely different fact
 - Never reword an existing question, and never ask the same fact from another angle
-- Output raw JSON array ONLY - no markdown, no explanation`;
+- Write a natural title and description based on the quiz content, not by copying the prompt
+- Do not include Markdown symbols such as #, *, or backticks in title or description
+- Output one raw JSON object ONLY - no markdown, no explanation`;
 
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
@@ -209,8 +210,10 @@ Rules:
             { role: "user", content: userPrompt },
         ],
         temperature: 0.3,
-        // The batch is small, so this allowance only has to cover the JSON.
-        max_tokens: Math.min(4_000, Math.max(1_500, batchCount * 500)),
+        // Generate the requested quiz in one response. The allowance scales
+        // with the question count while retaining a ceiling for providers that
+        // expose very large context windows.
+        max_tokens: Math.min(64_000, Math.max(4_000, batchCount * 800)),
         ...(disableReasoning ? { reasoning: { enabled: false } } : {}),
     }) as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
 
@@ -243,7 +246,7 @@ Rules:
         const finishReason = completion.choices[0]?.finish_reason;
 
     console.log(
-        `[AI batch ${batchNumber}] model=${model} count=${batchCount} length=${responseText.length} finish=${finishReason}`
+        `[AI batch ${batchNumber}] provider=${provider} model=${model} requested=${batchCount} length=${responseText.length} finish=${finishReason}`
     );
 
     if (!responseText) {
@@ -257,7 +260,7 @@ Rules:
 
     try {
         const parsed = parseAIResponse(responseText);
-        const normalized = normalizeQuestions(parsed);
+        const normalized = normalizeQuestions(parsed.questions);
 
         if (normalized.length === 0) {
             throw new Error("PARSE_FAILED: No valid questions parsed from AI response");
@@ -269,7 +272,11 @@ Rules:
             );
         }
 
-        return normalized;
+        return {
+            questions: normalized,
+            title: parsed.title,
+            description: parsed.description,
+        };
     } catch (parseError) {
         console.error(`[AI batch ${batchNumber}] Failed to parse AI response:`, parseError);
         if (truncated) throw new TruncatedAIResponseError();
@@ -289,6 +296,12 @@ interface GeneratedQuestion {
     }[];
     timeLimit: number;
     points: number;
+}
+
+interface GeneratedQuizContent {
+    questions: GeneratedQuestion[];
+    title?: string;
+    description?: string;
 }
 
 interface ModelFailure {
@@ -317,57 +330,78 @@ async function generateUpToTarget({
     existingQuestions: string[];
     alreadyGenerated: GeneratedQuestion[];
     deadline: number;
-}): Promise<GeneratedQuestion[]> {
+}): Promise<GeneratedQuizContent> {
     const client = getClient(candidate.provider);
     const collected: GeneratedQuestion[] = [...alreadyGenerated];
+    const existingQuestionRefs = existingQuestions.map((questionText) => ({ questionText }));
 
-    // Bounds the loop in case a model keeps returning duplicates.
-    const maxBatches =
-        Math.ceil((totalTarget - alreadyGenerated.length) / MAX_QUESTIONS_PER_BATCH) + 3;
+    let title: string | undefined;
+    let description: string | undefined;
+    let consecutiveNoProgress = 0;
 
-    for (let batch = 0; batch < maxBatches && collected.length < totalTarget; batch++) {
+    // The first call generates the quiz in one shot. If deduplication removes
+    // anything, ask the same model only for the missing questions before
+    // falling back to another provider.
+    for (let attempt = 1; attempt <= 4 && collected.length < totalTarget; attempt++) {
         const remaining = deadline - Date.now();
         if (remaining < MIN_CALL_MS) break;
 
-        const batchCount = Math.min(totalTarget - collected.length, MAX_QUESTIONS_PER_BATCH);
+        const requestedCount = totalTarget - collected.length;
+        let generatedContent: GeneratedQuizContent;
 
-        let batchQuestions: GeneratedQuestion[];
         try {
-            batchQuestions = await generateBatch({
+            generatedContent = await generateBatch({
                 client,
                 provider: candidate.provider,
                 model: candidate.id,
                 topic,
                 difficulty,
-                batchCount,
+                batchCount: requestedCount,
                 existingQuestions: [
                     ...existingQuestions,
-                    ...collected.map((q) => q.questionText),
+                    ...collected.map((question) => question.questionText),
                 ],
-                batchNumber: batch + 1,
+                batchNumber: attempt,
                 timeoutMs: Math.min(remaining, PER_CALL_TIMEOUT_MS),
             });
         } catch (error) {
-            // A slow extra batch must not throw away questions this model
-            // already produced. Re-throw only when it produced nothing, so the
-            // chain moves on to the next model.
-            if (collected.length > alreadyGenerated.length) {
-                console.warn(
-                    `[AI] ${candidate.id}: stopping early — ${(error as Error).message}`
-                );
-                break;
-            }
-            throw error;
+            if (collected.length === alreadyGenerated.length) throw error;
+            console.warn(
+                `[AI] ${candidate.provider}:${candidate.id} stopped after partial progress — ${(error as Error).message}`
+            );
+            break;
         }
 
-        collected.push(...batchQuestions);
+        title ||= generatedContent.title;
+        description ||= generatedContent.description;
+
+        const before = collected.length;
+        const acceptedQuestions = generatedContent.questions.filter(
+            (question) =>
+                !existingQuestionRefs.some((existing) => areQuestionsSimilar(existing, question)) &&
+                !collected.some((existing) => areQuestionsSimilar(existing, question))
+        );
+
+        collected.push(...acceptedQuestions);
 
         const uniqueQuestions = dedupeQuestions(collected);
         collected.length = 0;
         collected.push(...uniqueQuestions.slice(0, totalTarget));
+
+        const added = collected.length - before;
+        console.log(
+            `[AI result ${attempt}] provider=${candidate.provider} model=${candidate.id} requested=${requestedCount} accepted=${added}/${generatedContent.questions.length} total=${collected.length}/${totalTarget}`
+        );
+
+        if (added === 0) {
+            consecutiveNoProgress++;
+            if (consecutiveNoProgress >= 2) break;
+        } else {
+            consecutiveNoProgress = 0;
+        }
     }
 
-    return collected;
+    return { questions: collected, title, description };
 }
 
 /**
@@ -442,6 +476,8 @@ export async function POST(req: NextRequest) {
         const failures: ModelFailure[] = [];
 
         let questions: GeneratedQuestion[] = [];
+        let generatedTitle: string | undefined;
+        let generatedDescription: string | undefined;
         let usedCandidate: ModelCandidate | null = null;
 
         for (const candidate of chain) {
@@ -464,13 +500,18 @@ export async function POST(req: NextRequest) {
                     deadline,
                 });
 
-                if (generated.length > questions.length) {
-                    questions = generated;
+                if (generated.questions.length > questions.length) {
+                    questions = generated.questions;
+                    generatedTitle ||= generated.title;
+                    generatedDescription ||= generated.description;
                     usedCandidate = candidate;
                     noteModelSuccess(candidate);
                 } else {
                     // The model answered without adding anything new. Bench it
                     // briefly so the next round does not pay for it again.
+                    console.warn(
+                        `[AI] ${candidate.provider}:${candidate.id} added no unique questions; trying the next candidate`
+                    );
                     noteModelFailure(candidate, "model returned no new questions");
                 }
             } catch (error) {
@@ -501,6 +542,8 @@ export async function POST(req: NextRequest) {
             data: {
                 questions,
                 topic,
+                title: generatedTitle,
+                description: generatedDescription,
                 requested: totalTarget,
                 generatedCount: questions.length,
                 complete: remaining === 0,
@@ -533,7 +576,36 @@ export async function POST(req: NextRequest) {
  *  5. Truncated responses — strips the last incomplete object so the
  *     remaining array is still valid JSON and returns what we have.
  */
-function parseAIResponse(raw: string): GeneratedQuestion[] {
+function cleanGeneratedMetadata(value: unknown, maxLength: number): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const cleaned = value.replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
+    return cleaned ? cleaned.slice(0, maxLength) : undefined;
+}
+
+function parseAIResponse(raw: string): GeneratedQuizContent {
+    const text = raw
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```\s*$/, "")
+        .trim();
+
+    try {
+        const parsed = JSON.parse(text.replace(/,\s*([}\]])/g, "$1"));
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.questions)) {
+            return {
+                questions: parsed.questions as GeneratedQuestion[],
+                title: cleanGeneratedMetadata(parsed.title, 100),
+                description: cleanGeneratedMetadata(parsed.description, 500),
+            };
+        }
+    } catch {
+        // Fall back to the tolerant array recovery below.
+    }
+
+    return { questions: parseQuestionsFromAIResponse(text) };
+}
+
+function parseQuestionsFromAIResponse(raw: string): GeneratedQuestion[] {
     let text = raw.trim();
 
     if (!text) {

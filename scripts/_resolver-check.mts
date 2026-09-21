@@ -54,10 +54,14 @@ globalThis.fetch = (async (url: string | URL) => {
     });
 }) as typeof fetch;
 
-const { resolveModelChain, noteModelFailure, noteModelSuccess, isReasoningModel } = await import("./_tmp-resolver.mts");
+const temporaryResolverPath = "./_tmp-resolver.mts";
+const { resolveModelChain, noteModelFailure, noteModelSuccess, isReasoningModel } =
+    await import(temporaryResolverPath);
 
 const chain = await resolveModelChain();
-const ids = chain.map((c: { provider: string; id: string }) => `${c.provider}:${c.id}`);
+const ids: string[] = chain.map(
+    (candidate: { provider: string; id: string }) => `${candidate.provider}:${candidate.id}`
+);
 
 console.log("chain:");
 for (const id of ids) console.log(`   ${id}`);
