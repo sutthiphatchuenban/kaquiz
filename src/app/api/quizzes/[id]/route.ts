@@ -139,10 +139,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/quizzes/[id] - Delete a quiz
+// By default a quiz with game history cannot be deleted (409) — pass
+// ?force=true to wipe its sessions/players/answers as well. Forks made
+// from this quiz survive (forkedFromId is SetNull).
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
     try {
         const userId = await getUserFromToken();
         const { id } = await params;
+        const force = request.nextUrl.searchParams.get("force") === "true";
 
         if (!userId) {
             return NextResponse.json<ApiResponse>(
@@ -153,7 +157,10 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
         const existingQuiz = await prisma.quiz.findUnique({
             where: { id },
-            select: { userId: true },
+            select: {
+                userId: true,
+                _count: { select: { gameSessions: true } },
+            },
         });
 
         if (!existingQuiz) {
@@ -170,6 +177,75 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             );
         }
 
+        const sessionCount = existingQuiz._count.gameSessions;
+
+        if (sessionCount > 0 && !force) {
+            return NextResponse.json<ApiResponse>(
+                {
+                    success: false,
+                    error: `Quiz นี้มีประวัติการเล่น ${sessionCount} เกม ลบไม่ได้ — ให้ยกเลิกเผยแพร่แทน หรือลบพร้อมประวัติ`,
+                    message: "HAS_HISTORY",
+                },
+                { status: 409 }
+            );
+        }
+
+        if (sessionCount > 0 && force) {
+            await prisma.$transaction(async (tx) => {
+                const sessions = await tx.gameSession.findMany({
+                    where: { quizId: id },
+                    select: { id: true },
+                });
+                const sessionIds = sessions.map((s) => s.id);
+
+                if (sessionIds.length > 0) {
+                    const players = await tx.player.findMany({
+                        where: { sessionId: { in: sessionIds } },
+                        select: { id: true },
+                    });
+                    const playerIds = players.map((p) => p.id);
+
+                    const questions = await tx.question.findMany({
+                        where: { quizId: id },
+                        select: { id: true },
+                    });
+                    const questionIds = questions.map((q) => q.id);
+
+                    if (playerIds.length > 0 || questionIds.length > 0) {
+                        await tx.playerAnswer.deleteMany({
+                            where: {
+                                OR: [
+                                    ...(playerIds.length > 0
+                                        ? [{ playerId: { in: playerIds } }]
+                                        : []),
+                                    ...(questionIds.length > 0
+                                        ? [{ questionId: { in: questionIds } }]
+                                        : []),
+                                ],
+                            },
+                        });
+                    }
+
+                    if (playerIds.length > 0) {
+                        await tx.player.deleteMany({
+                            where: { id: { in: playerIds } },
+                        });
+                    }
+
+                    await tx.gameSession.deleteMany({
+                        where: { id: { in: sessionIds } },
+                    });
+                }
+
+                await tx.quiz.delete({ where: { id } });
+            });
+
+            return NextResponse.json<ApiResponse>({
+                success: true,
+                message: `ลบ Quiz พร้อมประวัติ ${sessionCount} เกมสำเร็จ`,
+            });
+        }
+
         await prisma.quiz.delete({ where: { id } });
 
         return NextResponse.json<ApiResponse>({
@@ -178,6 +254,20 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         });
     } catch (error) {
         console.error("Delete quiz error:", error);
+        // P2003 = FK ยังค้าง (เช่น ประวัติที่สร้างขึ้นพร้อมกัน) — บอกให้ชัดแทน 500 เปล่าๆ
+        if (
+            error instanceof Error &&
+            (error as { code?: string }).code === "P2003"
+        ) {
+            return NextResponse.json<ApiResponse>(
+                {
+                    success: false,
+                    error: "ลบไม่ได้เพราะยังมีประวัติการเล่นค้างอยู่ — ลองใหม่อีกครั้งแบบลบพร้อมประวัติ",
+                    message: "HAS_HISTORY",
+                },
+                { status: 409 }
+            );
+        }
         return NextResponse.json<ApiResponse>(
             { success: false, error: "เกิดข้อผิดพลาด" },
             { status: 500 }

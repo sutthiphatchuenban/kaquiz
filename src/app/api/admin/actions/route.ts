@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const body = (await request.json()) as { action?: AdminAction; targetId?: string };
+        const body = (await request.json()) as { action?: AdminAction; targetId?: string; force?: boolean };
         if (!body.action || !body.targetId) {
             return NextResponse.json<ApiResponse>(
                 { success: false, error: "ข้อมูลไม่ครบถ้วน" },
@@ -52,13 +52,68 @@ export async function POST(request: NextRequest) {
                     { status: 404 }
                 );
             }
-            if (quiz._count.gameSessions > 0) {
+            if (quiz._count.gameSessions > 0 && !body.force) {
                 return NextResponse.json<ApiResponse>(
-                    { success: false, error: "ลบ Quiz ที่มีประวัติการเล่นไม่ได้" },
+                    {
+                        success: false,
+                        error: `ลบ Quiz ที่มีประวัติการเล่นไม่ได้ (มี ${quiz._count.gameSessions} เกม) — ส่ง force:true เพื่อลบพร้อมประวัติ`,
+                        message: "HAS_HISTORY",
+                    },
                     { status: 409 }
                 );
             }
-            await prisma.quiz.delete({ where: { id: body.targetId } });
+            if (quiz._count.gameSessions > 0 && body.force) {
+                await prisma.$transaction(async (tx) => {
+                    const sessions = await tx.gameSession.findMany({
+                        where: { quizId: body.targetId as string },
+                        select: { id: true },
+                    });
+                    const sessionIds = sessions.map((s) => s.id);
+
+                    if (sessionIds.length > 0) {
+                        const players = await tx.player.findMany({
+                            where: { sessionId: { in: sessionIds } },
+                            select: { id: true },
+                        });
+                        const playerIds = players.map((p) => p.id);
+
+                        const questions = await tx.question.findMany({
+                            where: { quizId: body.targetId as string },
+                            select: { id: true },
+                        });
+                        const questionIds = questions.map((q) => q.id);
+
+                        if (playerIds.length > 0 || questionIds.length > 0) {
+                            await tx.playerAnswer.deleteMany({
+                                where: {
+                                    OR: [
+                                        ...(playerIds.length > 0
+                                            ? [{ playerId: { in: playerIds } }]
+                                            : []),
+                                        ...(questionIds.length > 0
+                                            ? [{ questionId: { in: questionIds } }]
+                                            : []),
+                                    ],
+                                },
+                            });
+                        }
+
+                        if (playerIds.length > 0) {
+                            await tx.player.deleteMany({
+                                where: { id: { in: playerIds } },
+                            });
+                        }
+
+                        await tx.gameSession.deleteMany({
+                            where: { id: { in: sessionIds } },
+                        });
+                    }
+
+                    await tx.quiz.delete({ where: { id: body.targetId as string } });
+                });
+            } else {
+                await prisma.quiz.delete({ where: { id: body.targetId } });
+            }
         } else if (body.action === "DELETE_USER") {
             const user = await prisma.user.findUnique({
                 where: { id: body.targetId },

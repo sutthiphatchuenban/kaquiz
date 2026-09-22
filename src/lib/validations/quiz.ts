@@ -24,6 +24,8 @@ export const questionSchema = z.object({
  */
 export const updateQuestionSchema = questionSchema.partial({ order: true });
 
+export const DIFFICULTY_LEVELS = ["ง่าย", "ปานกลาง", "ยาก"] as const;
+
 export const quizSchema = z.object({
     title: z
         .string()
@@ -32,11 +34,28 @@ export const quizSchema = z.object({
     description: z.string().max(500, "คำอธิบายต้องไม่เกิน 500 ตัวอักษร").optional(),
     coverImage: z.string().url().optional().nullable().or(z.literal("")),
     isPublished: z.boolean().default(false),
+    category: z.string().max(50, "หมวดหมู่ต้องไม่เกิน 50 ตัวอักษร").optional().nullable().or(z.literal("")),
+    difficulty: z.enum(DIFFICULTY_LEVELS).optional().nullable(),
 });
 
 export const createQuizSchema = quizSchema;
 
 export const updateQuizSchema = quizSchema.partial();
+
+export const publishQuizSchema = z.object({
+    isPublished: z.boolean(),
+    category: z.string().max(50, "หมวดหมู่ต้องไม่เกิน 50 ตัวอักษร").optional().nullable().or(z.literal("")),
+    difficulty: z.enum(DIFFICULTY_LEVELS).optional().nullable(),
+});
+
+export const publicQuizQuerySchema = z.object({
+    search: z.string().max(100).optional(),
+    category: z.string().max(50).optional(),
+    difficulty: z.enum(DIFFICULTY_LEVELS).optional(),
+    sort: z.enum(["newest", "popular", "copied"]).default("newest"),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(12),
+});
 
 export type AnswerInput = z.infer<typeof answerSchema>;
 export type QuestionInput = z.infer<typeof questionSchema>;

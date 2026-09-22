@@ -27,6 +27,7 @@ import {
 const NAV = [
     { href: "/dashboard", label: "แดชบอร์ด", icon: LayoutDashboard },
     { href: "/quizzes", label: "Quiz ของฉัน", icon: FileQuestion },
+    { href: "/library", label: "คลังสาธารณะ", icon: FileQuestion },
     { href: "/reports", label: "รายงาน", icon: BarChart3 },
     { href: "/settings", label: "ตั้งค่า", icon: Settings },
 ];
@@ -78,13 +79,15 @@ export function AppHeader() {
                 <div className="flex items-center gap-2">
                     <ThemeToggle />
 
-                    <Link
-                        href="/quizzes/new"
-                        className="kq-btn kq-btn-sm kq-btn-yellow hidden sm:inline-flex"
-                    >
-                        <Plus className="size-4" />
-                        สร้าง Quiz
-                    </Link>
+                    {user ? (
+                        <Link
+                            href="/quizzes/new"
+                            className="kq-btn kq-btn-sm kq-btn-yellow hidden sm:inline-flex"
+                        >
+                            <Plus className="size-4" />
+                            สร้าง Quiz
+                        </Link>
+                    ) : null}
 
                     {/* Compact nav for small screens */}
                     <div className="lg:hidden">
@@ -117,52 +120,63 @@ export function AppHeader() {
                         </DropdownMenu>
                     </div>
 
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <button
-                                type="button"
-                                aria-label="เมนูบัญชี"
-                                className="grid size-11 place-items-center border-[3px] border-[#211543] bg-[var(--sunny)] font-bold text-[#211543] shadow-[3px_3px_0_#211543] transition-transform hover:-translate-x-[1px] hover:-translate-y-[1px]"
-                            >
-                                {initial}
-                            </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-60">
-                            <DropdownMenuLabel>
-                                <span className="block truncate text-sm font-bold">
-                                    {user?.name ?? "ผู้เล่น"}
-                                </span>
-                                <span className="block truncate text-xs font-medium text-muted-foreground">
-                                    {user?.email ?? ""}
-                                </span>
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {NAV.map(({ href, label, icon: Icon }) => (
-                                <DropdownMenuItem key={href} asChild>
-                                    <Link href={href}>
-                                        <Icon className="size-4" />
-                                        {label}
-                                    </Link>
-                                </DropdownMenuItem>
-                            ))}
-                            {user?.isAdmin ? (
-                                <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem asChild>
-                                        <Link href="/admin">
-                                            <ShieldCheck className="size-4" />
-                                            ระบบผู้ดูแล
+                    {user ? (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label="เมนูบัญชี"
+                                    className="grid size-11 place-items-center border-[3px] border-[#211543] bg-[var(--sunny)] font-bold text-[#211543] shadow-[3px_3px_0_#211543] transition-transform hover:-translate-x-[1px] hover:-translate-y-[1px]"
+                                >
+                                    {initial}
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-60">
+                                <DropdownMenuLabel>
+                                    <span className="block truncate text-sm font-bold">
+                                        {user?.name ?? "ผู้เล่น"}
+                                    </span>
+                                    <span className="block truncate text-xs font-medium text-muted-foreground">
+                                        {user?.email ?? ""}
+                                    </span>
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {NAV.map(({ href, label, icon: Icon }) => (
+                                    <DropdownMenuItem key={href} asChild>
+                                        <Link href={href}>
+                                            <Icon className="size-4" />
+                                            {label}
                                         </Link>
                                     </DropdownMenuItem>
-                                </>
-                            ) : null}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
-                                <LogOut className="size-4" />
-                                ออกจากระบบ
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                                ))}
+                                {user?.isAdmin ? (
+                                    <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem asChild>
+                                            <Link href="/admin">
+                                                <ShieldCheck className="size-4" />
+                                                ระบบผู้ดูแล
+                                            </Link>
+                                        </DropdownMenuItem>
+                                    </>
+                                ) : null}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem variant="destructive" onClick={handleLogout}>
+                                    <LogOut className="size-4" />
+                                    ออกจากระบบ
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    ) : (
+                        <>
+                            <Link href="/login" className="kq-btn kq-btn-sm kq-btn-ghost hidden sm:inline-flex">
+                                เข้าสู่ระบบ
+                            </Link>
+                            <Link href="/register" className="kq-btn kq-btn-sm kq-btn-yellow">
+                                เริ่มต้นฟรี ↗
+                            </Link>
+                        </>
+                    )}
                 </div>
             </div>
             <div className="kq-topbar-rule" />

@@ -36,21 +36,32 @@ model User {
 // ========================================
 
 model Quiz {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   description String?
   coverImage  String?
-  isPublished Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isPublished Boolean   @default(false)
+  category    String?
+  difficulty  String?
+  publishedAt DateTime?
+  playCount   Int       @default(0)
+  copyCount   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   // Relations
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions    Question[]
   gameSessions GameSession[]
+  forkedFromId String?
+  forkedFrom   Quiz?  @relation("QuizFork", fields: [forkedFromId], references: [id], onDelete: SetNull)
+  forks        Quiz[] @relation("QuizFork")
 
   @@index([userId])
+  @@index([isPublished, updatedAt])
+  @@index([isPublished, playCount])
+  @@index([category])
   @@map("quizzes")
 }
 

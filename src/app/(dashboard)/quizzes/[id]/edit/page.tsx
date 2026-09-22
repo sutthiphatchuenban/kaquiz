@@ -65,8 +65,13 @@ interface Quiz {
     title: string;
     description: string | null;
     isPublished: boolean;
+    category: string | null;
+    difficulty: string | null;
     questions: Question[];
 }
+
+const CATEGORY_SUGGESTIONS = ["วิทยาศาสตร์", "คณิตศาสตร์", "ภาษา", "สังคม", "เทคโนโลยี", "อื่นๆ"];
+const DIFFICULTY_LEVELS = ["ง่าย", "ปานกลาง", "ยาก"] as const;
 
 const ANSWER_COLORS: ("red" | "blue" | "green" | "yellow")[] = ["red", "blue", "green", "yellow"];
 
@@ -158,7 +163,8 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
                 body: JSON.stringify({
                     title: quiz.title,
                     description: quiz.description,
-                    isPublished: quiz.isPublished,
+                    category: quiz.category || null,
+                    difficulty: quiz.difficulty || null,
                 }),
             });
             const data = await res.json();
@@ -171,6 +177,30 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
             toast.error("เกิดข้อผิดพลาด");
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleTogglePublish = async () => {
+        if (!quiz) return;
+        try {
+            const res = await fetch(`/api/quizzes/${id}/publish`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    isPublished: !quiz.isPublished,
+                    category: quiz.category || undefined,
+                    difficulty: (quiz.difficulty as "ง่าย" | "ปานกลาง" | "ยาก" | null) || undefined,
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setQuiz({ ...quiz, isPublished: !quiz.isPublished });
+                toast.success(!quiz.isPublished ? "เผยแพร่ Quiz แล้ว" : "ยกเลิกเผยแพร่แล้ว");
+            } else {
+                toast.error(data.error || "เปลี่ยนสถานะไม่สำเร็จ");
+            }
+        } catch {
+            toast.error("เกิดข้อผิดพลาด");
         }
     };
 
@@ -415,6 +445,63 @@ export default function EditQuizPage({ params }: { params: Promise<{ id: string 
                             placeholder="เพิ่มคำอธิบาย..."
                             rows={2}
                         />
+                    </div>
+
+                    <div className="grid gap-5 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="quiz-category" className="kq-label">
+                                หมวดหมู่
+                            </label>
+                            <input
+                                id="quiz-category"
+                                value={quiz.category || ""}
+                                onChange={(e) => setQuiz({ ...quiz, category: e.target.value })}
+                                className="kq-input"
+                                placeholder="เช่น วิทยาศาสตร์"
+                                list="quiz-category-list"
+                            />
+                            <datalist id="quiz-category-list">
+                                {CATEGORY_SUGGESTIONS.map((c) => (
+                                    <option key={c} value={c} />
+                                ))}
+                            </datalist>
+                        </div>
+                        <div>
+                            <label htmlFor="quiz-difficulty" className="kq-label">
+                                ระดับความยาก
+                            </label>
+                            <select
+                                id="quiz-difficulty"
+                                value={quiz.difficulty || ""}
+                                onChange={(e) => setQuiz({ ...quiz, difficulty: e.target.value || null })}
+                                className="kq-input"
+                            >
+                                <option value="">ไม่ระบุ</option>
+                                {DIFFICULTY_LEVELS.map((d) => (
+                                    <option key={d} value={d}>{d}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-[3px] border-line bg-paper px-4 py-3 shadow-hard-sm">
+                        <div>
+                            <p className="font-bold text-ink">
+                                สถานะ: {quiz.isPublished ? "สาธารณะ" : "ส่วนตัว"}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                                {quiz.isPublished
+                                    ? "ทุกคนค้นหาและเล่น quiz นี้ได้"
+                                    : "เผยแพร่เพื่อขึ้นคลังสาธารณะ (ต้องมี ≥1 ข้อ)"}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleTogglePublish}
+                            className={`kq-btn ${quiz.isPublished ? "kq-btn-paper" : "kq-btn-yellow"}`}
+                        >
+                            {quiz.isPublished ? "ยกเลิกเผยแพร่" : "เผยแพร่"}
+                        </button>
                     </div>
                 </div>
             </section>

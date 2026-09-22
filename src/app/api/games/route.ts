@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (quiz.userId !== userId) {
+        if (quiz.userId !== userId && !quiz.isPublished) {
             return NextResponse.json<ApiResponse>(
                 { success: false, error: "ไม่มีสิทธิ์เริ่มเกมนี้" },
                 { status: 403 }
@@ -99,25 +99,31 @@ export async function POST(request: NextRequest) {
         }
 
         // Create game session
-        const gameSession = await prisma.gameSession.create({
-            data: {
-                pin,
-                quizId,
-                hostId: userId,
-                status: "LOBBY",
-            },
-            include: {
-                quiz: {
-                    include: {
-                        questions: {
-                            include: { answers: { orderBy: { order: "asc" } } },
-                            orderBy: { order: "asc" },
+        const [gameSession] = await prisma.$transaction([
+            prisma.gameSession.create({
+                data: {
+                    pin,
+                    quizId,
+                    hostId: userId,
+                    status: "LOBBY",
+                },
+                include: {
+                    quiz: {
+                        include: {
+                            questions: {
+                                include: { answers: { orderBy: { order: "asc" } } },
+                                orderBy: { order: "asc" },
+                            },
                         },
                     },
+                    players: true,
                 },
-                players: true,
-            },
-        });
+            }),
+            prisma.quiz.update({
+                where: { id: quizId },
+                data: { playCount: { increment: 1 } },
+            }),
+        ]);
 
         return NextResponse.json<ApiResponse>(
             { success: true, data: gameSession, message: "สร้าง Game Session สำเร็จ" },

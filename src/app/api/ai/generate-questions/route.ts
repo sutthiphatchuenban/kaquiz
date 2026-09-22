@@ -125,6 +125,9 @@ function normalizeQuestions(questions: GeneratedQuestion[]): GeneratedQuestion[]
 
 
 
+/** Cap pasted source so prompt + source still fits the context window. */
+const MAX_SOURCE_CHARS = 8_000;
+
 async function generateBatch({
     client,
     provider,
@@ -135,6 +138,7 @@ async function generateBatch({
     existingQuestions,
     batchNumber,
     timeoutMs,
+    sourceText,
 }: {
     client: OpenAI;
     provider: ProviderName;
@@ -145,6 +149,7 @@ async function generateBatch({
     existingQuestions: string[];
     batchNumber: number;
     timeoutMs: number;
+    sourceText?: string;
 }): Promise<GeneratedQuizContent> {
     const SYSTEM_PROMPT = `You are a quiz content generator. You MUST respond with ONLY one valid JSON object and nothing else.
 No markdown, no code fences, no explanation, and no prose outside the JSON.
@@ -156,10 +161,33 @@ If asked to generate N questions, the questions array must have exactly N elemen
         ? `\n\nIMPORTANT - These questions already exist. DO NOT repeat them, and DO NOT ask the same thing with different wording:\n${existingList.slice(-30).map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nRewording an existing question, reordering its choices, or asking about the same fact from the same angle still counts as a repeat. Every new question must test a DIFFERENT fact.`
         : "";
 
+    const trimmedSource = (sourceText || "").trim().slice(0, MAX_SOURCE_CHARS);
+    const hasSource = trimmedSource.length > 0;
+    const topicLine = topic.trim()
+        ? `Topic hint: "${topic.trim()}"`
+        : `Topic hint: (none — derive it from the source material)`;
+
     // A malformed/empty response is a model failure. Trying another model is
     // both faster and more useful than asking the same free model again.
-    const userPrompt = `Generate ${batchCount} quiz questions about: "${topic}"
+    // When the user pasted a finished exam / document, the model must convert
+    // THAT material into questions instead of inventing from the topic alone.
+    const introPrompt = hasSource
+        ? `Create ${batchCount} quiz questions BASED ON the source material below. Cover its key facts evenly; do not invent facts outside it.
+${topicLine}
 Difficulty: ${difficulty}${avoidSection}
+
+SOURCE MATERIAL (use this directly):
+"""
+${trimmedSource}
+"""`
+        : `Generate ${batchCount} quiz questions about: "${topic}"
+Difficulty: ${difficulty}${avoidSection}`;
+
+    const sourceRule = hasSource
+        ? "\n- Base every question on the SOURCE MATERIAL above; keep its correct answers faithful to the source"
+        : "";
+
+    const userPrompt = `${introPrompt}
 
 Output ONLY this JSON object structure (no other text):
 {
@@ -189,7 +217,7 @@ Rules:
 - Each question must be UNIQUE and test a completely different fact
 - Never reword an existing question, and never ask the same fact from another angle
 - Write a natural title and description based on the quiz content, not by copying the prompt
-- Do not include Markdown symbols such as #, *, or backticks in title or description
+- Do not include Markdown symbols such as #, *, or backticks in title or description${sourceRule}
 - Output one raw JSON object ONLY - no markdown, no explanation`;
 
     const controller = new AbortController();
@@ -322,6 +350,7 @@ async function generateUpToTarget({
     existingQuestions,
     alreadyGenerated,
     deadline,
+    sourceText,
 }: {
     candidate: ModelCandidate;
     topic: string;
@@ -330,6 +359,7 @@ async function generateUpToTarget({
     existingQuestions: string[];
     alreadyGenerated: GeneratedQuestion[];
     deadline: number;
+    sourceText?: string;
 }): Promise<GeneratedQuizContent> {
     const client = getClient(candidate.provider);
     const collected: GeneratedQuestion[] = [...alreadyGenerated];
@@ -363,6 +393,7 @@ async function generateUpToTarget({
                 ],
                 batchNumber: attempt,
                 timeoutMs: Math.min(remaining, PER_CALL_TIMEOUT_MS),
+                sourceText,
             });
         } catch (error) {
             if (collected.length === alreadyGenerated.length) throw error;
@@ -438,11 +469,14 @@ function describeFailure(failures: ModelFailure[]): string {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { topic, count, difficulty = "medium", existingQuestions = [] } = body;
+        const { topic, count, difficulty = "medium", existingQuestions = [], sourceText } = body;
 
-        if (!topic || !count) {
+        const cleanTopic = typeof topic === "string" ? topic.trim() : "";
+        const cleanSource = typeof sourceText === "string" ? sourceText.trim().slice(0, MAX_SOURCE_CHARS) : "";
+
+        if ((!cleanTopic && !cleanSource) || !count) {
             return NextResponse.json(
-                { success: false, error: "กรุณากรอกหัวข้อและจำนวนคำถาม" },
+                { success: false, error: "กรุณากรอกหัวข้อหรือวางเนื้อข้อสอบ และระบุจำนวนคำถาม" },
                 { status: 400 }
             );
         }
@@ -492,12 +526,13 @@ export async function POST(req: NextRequest) {
             try {
                 const generated = await generateUpToTarget({
                     candidate,
-                    topic,
+                    topic: cleanTopic,
                     difficulty,
                     totalTarget,
                     existingQuestions: seedExistingQuestions,
                     alreadyGenerated: questions,
                     deadline,
+                    sourceText: cleanSource || undefined,
                 });
 
                 if (generated.questions.length > questions.length) {
@@ -541,7 +576,7 @@ export async function POST(req: NextRequest) {
             success: true,
             data: {
                 questions,
-                topic,
+                topic: cleanTopic,
                 title: generatedTitle,
                 description: generatedDescription,
                 requested: totalTarget,

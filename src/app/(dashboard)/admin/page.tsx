@@ -149,8 +149,8 @@ export default function AdminPage() {
         if (authChecked && isAdmin) void fetchOverview();
     }, [authChecked, fetchOverview, isAdmin]);
 
-    const runAction = async (action: AdminAction, targetId: string, message: string) => {
-        if (!window.confirm(message)) return;
+    const runAction = async (action: AdminAction, targetId: string, message: string, force = false) => {
+        if (!force && !window.confirm(message)) return;
 
         setActionTarget(targetId);
         setError(null);
@@ -158,10 +158,20 @@ export default function AdminPage() {
             const response = await fetch("/api/admin/actions", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action, targetId }),
+                body: JSON.stringify({ action, targetId, ...(force ? { force: true } : {}) }),
             });
             const payload = await response.json();
             if (!response.ok || !payload.success) {
+                // Quiz มีประวัติ — ให้ทางเลือก wipe แบบชัดๆ แทน error เปล่าๆ
+                if (!force && action === "DELETE_QUIZ" && payload.message === "HAS_HISTORY") {
+                    const retry = window.confirm(
+                        `${payload.error}\n\nกด OK เพื่อลบพร้อมประวัติทั้งหมด (ย้อนกลับไม่ได้)`
+                    );
+                    if (retry) {
+                        await runAction(action, targetId, message, true);
+                        return;
+                    }
+                }
                 throw new Error(payload.error || "ดำเนินการไม่สำเร็จ");
             }
             await fetchOverview();

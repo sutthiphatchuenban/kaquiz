@@ -29,6 +29,9 @@ export function SiteHeader() {
                             {item.label}
                         </HashLink>
                     ))}
+                    <Link href="/library" className="kq-navlink">
+                        คลังสาธารณะ
+                    </Link>
                 </nav>
 
                 <div className="flex items-center gap-2">

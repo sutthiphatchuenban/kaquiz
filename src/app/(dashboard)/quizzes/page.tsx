@@ -24,6 +24,8 @@ import {
     Play,
     Plus,
     Trash2,
+    Globe,
+    Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,6 +34,10 @@ interface Quiz {
     title: string;
     description: string | null;
     isPublished: boolean;
+    category: string | null;
+    difficulty: string | null;
+    playCount: number;
+    copyCount: number;
     createdAt: string;
     updatedAt: string;
     _count: {
@@ -48,6 +54,19 @@ export default function QuizzesPage() {
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deleteForce, setDeleteForce] = useState(false);
+    const [deleteHasHistory, setDeleteHasHistory] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const quizToDelete = quizzes.find((q) => q.id === deleteId) ?? null;
+    const deleteSessionCount = quizToDelete?._count.gameSessions ?? 0;
+    const deleteNeedsForce = deleteHasHistory || deleteSessionCount > 0;
+
+    const closeDeleteDialog = () => {
+        setDeleteId(null);
+        setDeleteForce(false);
+        setDeleteHasHistory(false);
+    };
 
     useEffect(() => {
         checkAuth();
@@ -79,25 +98,57 @@ export default function QuizzesPage() {
         }
     };
 
-    const handleDelete = async () => {
+    const handleDelete = async (force = false) => {
         if (!deleteId) return;
 
+        // กันลบพร้อมประวัติแบบไม่ตั้งใจ — ต้องติ๊กยืนยันก่อน
+        if (force && deleteNeedsForce && !deleteForce) {
+            toast.error("ติ๊กยืนยันลบประวัติการเล่นก่อน");
+            return;
+        }
+
+        setIsDeleting(true);
         try {
-            const res = await fetch(`/api/quizzes/${deleteId}`, {
+            const res = await fetch(`/api/quizzes/${deleteId}${force ? "?force=true" : ""}`, {
                 method: "DELETE",
             });
             const data = await res.json();
 
             if (data.success) {
                 setQuizzes(quizzes.filter(q => q.id !== deleteId));
-                toast.success("ลบ Quiz สำเร็จ");
+                toast.success(data.message || "ลบ Quiz สำเร็จ");
+                closeDeleteDialog();
+            } else if (res.status === 409 && data.message === "HAS_HISTORY") {
+                setDeleteHasHistory(true);
+                toast.error(data.error || "Quiz นี้มีประวัติการเล่น", { duration: 8000 });
             } else {
                 toast.error(data.error || "ลบ Quiz ไม่สำเร็จ");
             }
         } catch {
             toast.error("เกิดข้อผิดพลาด");
         } finally {
-            setDeleteId(null);
+            setIsDeleting(false);
+        }
+    };
+
+    const handleTogglePublish = async (quiz: Quiz) => {
+        try {
+            const res = await fetch(`/api/quizzes/${quiz.id}/publish`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isPublished: !quiz.isPublished }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setQuizzes(quizzes.map((q) =>
+                    q.id === quiz.id ? { ...q, isPublished: !quiz.isPublished } : q
+                ));
+                toast.success(!quiz.isPublished ? "เผยแพร่ Quiz แล้ว" : "ยกเลิกเผยแพร่แล้ว");
+            } else {
+                toast.error(data.error || "เปลี่ยนสถานะไม่สำเร็จ");
+            }
+        } catch {
+            toast.error("เกิดข้อผิดพลาด");
         }
     };
 
@@ -161,6 +212,9 @@ export default function QuizzesPage() {
                                 <span className="kq-badge absolute left-3 top-3">
                                     QUIZ {String(index + 1).padStart(2, "0")}
                                 </span>
+                                <span className={`kq-badge absolute right-3 top-3 ${quiz.isPublished ? "kq-badge-cyan" : ""}`}>
+                                    {quiz.isPublished ? "สาธารณะ" : "ส่วนตัว"}
+                                </span>
 
                                 <span className="grid size-20 rotate-[4deg] place-items-center border-[3px] border-line bg-paper shadow-hard-sm">
                                     <FileQuestion className="size-9 text-ink" strokeWidth={2.4} />
@@ -182,9 +236,21 @@ export default function QuizzesPage() {
                                     <span className="kq-badge kq-badge-peach">
                                         {quiz._count.gameSessions} เกม
                                     </span>
+                                    {quiz.category ? (
+                                        <span className="kq-badge">{quiz.category}</span>
+                                    ) : null}
                                 </div>
 
                                 <div className="mt-1 grid grid-cols-2 gap-2 border-t-2 border-dashed border-line/30 pt-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTogglePublish(quiz)}
+                                        className="kq-btn kq-btn-sm kq-btn-paper col-span-2"
+                                        title={quiz.isPublished ? "ยกเลิกเผยแพร่" : "เผยแพร่สู่คลังสาธารณะ"}
+                                    >
+                                        {quiz.isPublished ? <Lock className="size-4" /> : <Globe className="size-4" />}
+                                        {quiz.isPublished ? "ยกเลิกเผยแพร่" : "เผยแพร่"}
+                                    </button>
                                     <Link
                                         href={`/quizzes/${quiz.id}/edit`}
                                         className="kq-btn kq-btn-sm kq-btn-paper flex-1"
@@ -201,7 +267,11 @@ export default function QuizzesPage() {
                                     </Link>
                                     <button
                                         type="button"
-                                        onClick={() => setDeleteId(quiz.id)}
+                                        onClick={() => {
+                                            setDeleteId(quiz.id);
+                                            setDeleteForce(false);
+                                            setDeleteHasHistory(false);
+                                        }}
                                         className="kq-btn kq-btn-sm kq-btn-danger col-span-2 sm:col-span-1"
                                         aria-label={`ลบ Quiz ${quiz.title}`}
                                     >
@@ -216,7 +286,7 @@ export default function QuizzesPage() {
             )}
 
             {/* Delete Confirmation Dialog */}
-            <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+            <AlertDialog open={!!deleteId} onOpenChange={() => closeDeleteDialog()}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogMedia>
@@ -225,13 +295,42 @@ export default function QuizzesPage() {
                         <AlertDialogTitle>ยืนยันการลบ Quiz?</AlertDialogTitle>
                         <AlertDialogDescription>
                             การลบนี้จะไม่สามารถกู้คืนได้ คำถามและข้อมูลทั้งหมดจะถูกลบไปด้วย
+                            {quizToDelete ? ` (${quizToDelete.title})` : ""}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    {deleteNeedsForce ? (
+                        <div className="border-[3px] border-line bg-cream p-4 shadow-hard-sm">
+                            <p className="text-sm font-bold text-ink">
+                                Quiz นี้มีประวัติการเล่น {deleteSessionCount} เกม — ลบแล้วรายงานและประวัติพวกนั้นหายไปด้วย
+                            </p>
+                            <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm font-bold text-ink">
+                                <input
+                                    type="checkbox"
+                                    checked={deleteForce}
+                                    onChange={(e) => setDeleteForce(e.target.checked)}
+                                    className="size-4 accent-[#6234dc]"
+                                />
+                                เข้าใจแล้ว ลบประวัติการเล่นไปด้วย
+                            </label>
+                        </div>
+                    ) : null}
                     <AlertDialogFooter>
-                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                        <AlertDialogAction variant="destructive" onClick={handleDelete}>
-                            ลบ Quiz
-                        </AlertDialogAction>
+                        <AlertDialogCancel disabled={isDeleting}>ยกเลิก</AlertDialogCancel>
+                        {deleteNeedsForce ? (
+                            <button
+                                type="button"
+                                onClick={() => handleDelete(true)}
+                                disabled={isDeleting || !deleteForce}
+                                className="kq-btn kq-btn-sm kq-btn-danger disabled:opacity-50"
+                            >
+                                <Trash2 className="size-4" />
+                                {isDeleting ? "กำลังลบ..." : `ลบพร้อมประวัติ (${deleteSessionCount} เกม)`}
+                            </button>
+                        ) : (
+                            <AlertDialogAction variant="destructive" onClick={() => handleDelete(false)} disabled={isDeleting}>
+                                ลบ Quiz
+                            </AlertDialogAction>
+                        )}
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

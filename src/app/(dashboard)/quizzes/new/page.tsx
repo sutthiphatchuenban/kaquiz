@@ -50,6 +50,7 @@ export default function NewQuizPage() {
 
     // AI Generation States
     const [aiTopic, setAiTopic] = useState("");
+    const [aiSourceText, setAiSourceText] = useState("");
     const [aiQuestionCount, setAiQuestionCount] = useState("5");
     const [aiDifficulty, setAiDifficulty] = useState("medium");
     const [isGenerating, setIsGenerating] = useState(false);
@@ -119,13 +120,16 @@ export default function NewQuizPage() {
     const handleGenerateQuestions = async (
         { continueExisting = false }: { continueExisting?: boolean } = {}
     ) => {
-        if (!aiTopic.trim()) {
-            toast.error("กรุณากรอกหัวข้อที่ต้องการสร้างคำถาม");
+        const hasTopic = aiTopic.trim().length > 0;
+        const hasSource = aiSourceText.trim().length > 0;
+        if (!hasTopic && !hasSource) {
+            toast.error("กรุณากรอกหัวข้อ หรือวางเนื้อข้อสอบที่ทำเสร็จแล้ว");
             return;
         }
         if (isGenerating) return;
 
         const topic = aiTopic.trim();
+        const sourceText = aiSourceText.trim();
         const difficulty = aiDifficulty;
         const target = aiTargetCount;
         const existing = continueExisting ? generatedQuestions : [];
@@ -146,6 +150,7 @@ export default function NewQuizPage() {
                 difficulty,
                 target,
                 existingQuestions: existing,
+                ...(sourceText ? { sourceText } : {}),
                 onProgress: setGenerationProgress,
             });
 
@@ -385,17 +390,36 @@ export default function NewQuizPage() {
                                 <div className="grid gap-4">
                                     <div>
                                         <label htmlFor="aiTopic" className="kq-label">
-                                            หัวข้อที่ต้องการสร้างคำถาม *
+                                            หัวข้อที่ต้องการสร้างคำถาม {aiSourceText.trim() ? "(ไม่บังคับเมื่อวางเนื้อข้อสอบแล้ว)" : "*"}
                                         </label>
                                         <textarea
                                             id="aiTopic"
-                                            placeholder="เช่น ประวัติศาสตร์ไทยสมัยสุโขทัย, วิทยาศาสตร์เรื่องระบบสุริยะ, คำศัพท์ภาษาอังกฤษเกี่ยวกับอาหาร..."
+                                            placeholder="เช่น ประวัติศาสตร์ไทยสมัยสุโขทัย, วิทยาศาสตร์เรื่องระบบสุริยะ... หรือวางข้อสอบที่ทำเสร็จแล้วในช่องด้านล่างแทนก็ได้"
                                             value={aiTopic}
                                             onChange={(e) => setAiTopic(e.target.value)}
                                             disabled={isGenerating || isLoading}
                                             rows={3}
                                             className="kq-textarea resize-none"
                                         />
+                                    </div>
+
+                                    <div>
+                                        <label htmlFor="aiSourceText" className="kq-label">
+                                            วางเนื้อข้อสอบ / เอกสารต้นฉบับ (ไม่บังคับ — AI จะเอาไปใช้เลย)
+                                        </label>
+                                        <textarea
+                                            id="aiSourceText"
+                                            placeholder="วางข้อสอบที่ทำเสร็จแล้ว หรือเนื้อเอกสารทั้งก้อนที่นี่ เช่น ข้อ 1. ... ก. ... ข. ... ค. ... ง. ... เฉลย: ... AI จะแปลงเป็นคำถาม 4 ตัวเลือกพร้อมเฉลยให้"
+                                            value={aiSourceText}
+                                            onChange={(e) => setAiSourceText(e.target.value.slice(0, 12000))}
+                                            disabled={isGenerating || isLoading}
+                                            rows={6}
+                                            className="kq-textarea"
+                                        />
+                                        <p className="mt-1 flex items-center justify-between text-xs font-bold text-muted-foreground">
+                                            <span>ถ้าใส่ช่องนี้ AI จะออกข้อสอบจากเนื้อหานี้โดยตรง ไม่แต่งเรื่องใหม่</span>
+                                            <span>{aiSourceText.length}/12000</span>
+                                        </p>
                                     </div>
 
                                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -453,7 +477,7 @@ export default function NewQuizPage() {
                                     <button
                                         type="button"
                                         onClick={() => handleGenerateQuestions()}
-                                        disabled={isGenerating || !aiTopic.trim()}
+                                        disabled={isGenerating || (!aiTopic.trim() && !aiSourceText.trim())}
                                         className="kq-btn kq-btn-purple kq-btn-block kq-btn-lg"
                                     >
                                         {isGenerating ? (

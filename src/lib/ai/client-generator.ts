@@ -76,6 +76,7 @@ export async function generateQuestionsUntilComplete({
     difficulty,
     target,
     existingQuestions = [],
+    sourceText,
     onProgress,
 }: {
     topic: string;
@@ -83,6 +84,8 @@ export async function generateQuestionsUntilComplete({
     target: number;
     /** Questions that already exist, e.g. when the user asks for more. */
     existingQuestions?: GeneratedQuestion[];
+    /** Optional pasted exam / source document the AI must base questions on. */
+    sourceText?: string;
     onProgress?: (progress: GenerationProgress) => void;
 }): Promise<GenerationResult> {
     const goal = Math.min(Math.max(Math.floor(target) || 1, 1), MAX_QUESTIONS);
@@ -122,6 +125,7 @@ export async function generateQuestionsUntilComplete({
                     difficulty,
                     count: goal - collected.length,
                     existingQuestions: collected.map((question) => question.questionText),
+                    ...(sourceText?.trim() ? { sourceText: sourceText.trim() } : {}),
                 }),
             });
 
