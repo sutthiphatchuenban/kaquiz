@@ -31,7 +31,13 @@ export default function LoginPage() {
 
         if (result.success) {
             toast.success("เข้าสู่ระบบสำเร็จ!");
-            router.push("/dashboard");
+            const from = new URLSearchParams(window.location.search).get("from");
+            const destination = from ? new URL(from, window.location.origin) : null;
+            router.push(
+                destination?.origin === window.location.origin
+                    ? `${destination.pathname}${destination.search}${destination.hash}`
+                    : "/dashboard"
+            );
         } else {
             toast.error(result.error || "เข้าสู่ระบบไม่สำเร็จ");
         }
