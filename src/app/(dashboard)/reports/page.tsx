@@ -12,7 +12,8 @@ import {
     Users,
     FileQuestion,
     Trophy,
-    Clock
+    Clock,
+    ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -175,9 +176,11 @@ export default function ReportsPage() {
 
                     <div className="grid gap-4">
                         {sessions.map((session) => (
-                            <article
+                            <Link
                                 key={session.id}
-                                className="kq-card kq-card-hover flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+                                href={`/reports/${session.id}`}
+                                aria-label={`ดูรายงาน ${session.quiz.title} PIN ${session.pin}`}
+                                className="kq-card kq-card-hover flex flex-col gap-4 p-5 focus-visible:outline-2 focus-visible:outline-offset-4 sm:flex-row sm:items-center sm:justify-between"
                             >
                                 <div className="flex min-w-0 items-start gap-4">
                                     <span className="kq-stat-icon shrink-0 bg-grape">
@@ -206,10 +209,13 @@ export default function ReportsPage() {
                                     </div>
                                 </div>
 
-                                <div className="shrink-0">
+                                <div className="flex shrink-0 items-center gap-3">
                                     {getStatusBadge(session.status)}
+                                    <span className="inline-flex items-center gap-1 text-sm font-bold text-ink">
+                                        ดูรายละเอียด <ArrowRight className="size-4" />
+                                    </span>
                                 </div>
-                            </article>
+                            </Link>
                         ))}
                     </div>
                 </>
