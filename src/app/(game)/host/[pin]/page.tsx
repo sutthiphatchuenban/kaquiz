@@ -22,7 +22,8 @@ import {
     SkipForward,
     Volume2,
     VolumeX,
-    Music
+    Music,
+    BarChart3
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,6 +79,7 @@ interface Player {
 }
 
 interface GameData {
+    id: string;
     status: string;
     currentQuestionIndex: number;
     quiz: Quiz;
@@ -1177,6 +1179,13 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                     </div>
 
                     <footer className="relative z-10 flex w-full max-w-2xl flex-wrap items-center justify-center gap-3 px-4 pb-10">
+                        <Link
+                            href={`/reports/${gameData.id}`}
+                            className="kq-btn kq-btn-cyan kq-btn-lg"
+                        >
+                            <BarChart3 className="size-5" aria-hidden="true" />
+                            ดูรายงานเกมนี้
+                        </Link>
                         <Link href="/quizzes" className="kq-btn kq-btn-paper kq-btn-lg">
                             <ArrowLeft className="size-5" />
                             กลับแดชบอร์ด
