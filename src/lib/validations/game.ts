@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const MAX_PLAYER_NAME_LENGTH = 200;
+
 export const joinGameSchema = z.object({
     pin: z
         .string()
@@ -7,8 +9,9 @@ export const joinGameSchema = z.object({
         .regex(/^\d+$/, "Game PIN ต้องเป็นตัวเลขเท่านั้น"),
     nickname: z
         .string()
-        .min(1, "กรุณากรอกชื่อเล่น")
-        .max(20, "ชื่อเล่นต้องไม่เกิน 20 ตัวอักษร"),
+        .trim()
+        .min(1, "กรุณากรอกชื่อผู้เล่น")
+        .max(MAX_PLAYER_NAME_LENGTH, `ชื่อผู้เล่นต้องไม่เกิน ${MAX_PLAYER_NAME_LENGTH} ตัวอักษร`),
 });
 
 export const submitAnswerSchema = z.object({

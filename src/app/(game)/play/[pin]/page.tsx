@@ -22,6 +22,8 @@ import { toast } from "sonner";
 
 import { ArcadeSprite } from "@/components/arcade-sprite";
 import { Marquee } from "@/components/marquee";
+import { estimateServerOffset, isSameGameQuestion } from "@/lib/game-sync";
+import { joinGameSchema, MAX_PLAYER_NAME_LENGTH } from "@/lib/validations/game";
 
 const ANSWER_LETTERS = ["A", "B", "C", "D"];
 
@@ -57,6 +59,8 @@ interface GameData {
     status: string;
     currentQuestionIndex: number;
     startedAt: string | null;
+    serverNow: string;
+    myAnswer: { questionId: string; answerId: string | null; isCorrect: boolean | null; pointsEarned: number | null } | null;
     quiz: {
         title: string;
         questions: Question[];
@@ -109,7 +113,13 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     const [gameData, setGameData] = useState<GameData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-    const [answerStartTime, setAnswerStartTime] = useState<number>(0);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submissionError, setSubmissionError] = useState<string | null>(null);
+    const submittingRef = useRef(false);
+    const submissionControllerRef = useRef<AbortController | null>(null);
+    const pollControllerRef = useRef<AbortController | null>(null);
+    const latestGameRef = useRef<GameData | null>(null);
+    const serverOffsetRef = useRef(0);
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [myScore, setMyScore] = useState(0);
     const [myRank, setMyRank] = useState(0);
@@ -122,10 +132,21 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             router.push("/join");
             return;
         }
+        const stored = useGameStore.getState();
+        if (stored.pin !== pin) {
+            resetGame();
+            useGameStore.setState({ pin });
+        }
+        setMyScore(0);
         fetchGame();
 
         return () => {
-            resetGame();
+            pollControllerRef.current?.abort();
+            pollControllerRef.current = null;
+            submissionControllerRef.current?.abort();
+            submissionControllerRef.current = null;
+            submittingRef.current = false;
+            toast.dismiss(`connection-${pin}`);
         };
     }, [pin]);
 
@@ -168,54 +189,68 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         };
     }, [onGameStarted, onQuestion, onShowAnswer, onLeaderboard, onGameEnded]);
 
-    // Poll for game updates (fallback if socket not connected)
+    // Only one poll may be in flight, so slow responses cannot rewind the game.
     useEffect(() => {
-        let pollInterval: NodeJS.Timeout;
-
-        if (playerId && !isConnected) {
-            pollInterval = setInterval(async () => {
-                await fetchGame();
-            }, 1000);
-        }
-
-        return () => {
-            if (pollInterval) clearInterval(pollInterval);
+        if (isConnected) return;
+        const pollInterval = setInterval(() => { void fetchGame(); }, 1000);
+        const resume = () => {
+            if (document.visibilityState === "visible") void fetchGame();
         };
-    }, [playerId, isConnected]);
+        const offline = () => {
+            toast.error("การเชื่อมต่อขาดหาย กำลังรอเชื่อมต่อเพื่ออัปเดตคำถาม", {
+                id: `connection-${pin}`, duration: Infinity,
+            });
+        };
+        window.addEventListener("online", resume);
+        window.addEventListener("offline", offline);
+        document.addEventListener("visibilitychange", resume);
+        return () => {
+            clearInterval(pollInterval);
+            window.removeEventListener("online", resume);
+            window.removeEventListener("offline", offline);
+            document.removeEventListener("visibilitychange", resume);
+        };
+    }, [playerId, isConnected, pin]);
 
     // Compute timeRemaining from server startedAt so host & player stay in sync
     const computedTimeRemaining = useCallback(() => {
         if (gameData?.status !== "QUESTION" || !gameData?.startedAt) return 0;
         const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
         if (!currentQuestion) return 0;
-        const elapsed = Math.floor((Date.now() - new Date(gameData.startedAt).getTime()) / 1000);
+        const elapsed = Math.floor((Date.now() + serverOffsetRef.current - new Date(gameData.startedAt).getTime()) / 1000);
         return Math.max(0, currentQuestion.timeLimit - elapsed);
     }, [gameData?.status, gameData?.startedAt, gameData?.currentQuestionIndex, gameData?.quiz?.questions]);
 
     const initializedQuestionRef = useRef<{ index: number; startedAt: string | null }>({ index: -1, startedAt: null });
 
-    // Reset state when question changes
+    // Recover saved results after a dropped POST response or a page reload.
     useEffect(() => {
-        if (gameData?.status === "QUESTION") {
-            const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
-            const isNewQuestion = 
-                initializedQuestionRef.current.index !== gameData.currentQuestionIndex ||
-                initializedQuestionRef.current.startedAt !== gameData.startedAt;
-
-            if (currentQuestion && isNewQuestion) {
-                setTimeRemaining(computedTimeRemaining());
-                setAnswerStartTime(Date.now());
-                setSelectedAnswer(null);
-                setHasAnswered(false);
-                setAnswerResult(null, 0);
-
-                initializedQuestionRef.current = {
-                    index: gameData.currentQuestionIndex,
-                    startedAt: gameData.startedAt
-                };
-            }
+        if (!gameData) return;
+        const isNewQuestion = initializedQuestionRef.current.index !== gameData.currentQuestionIndex ||
+            initializedQuestionRef.current.startedAt !== gameData.startedAt;
+        if (isNewQuestion) {
+            submissionControllerRef.current?.abort();
+            submissionControllerRef.current = null;
+            submittingRef.current = false;
+            setIsSubmitting(false);
+            setTimeRemaining(computedTimeRemaining());
+            setSelectedAnswer(null);
+            setHasAnswered(false);
+            setAnswerResult(null, 0);
+            setSubmissionError(null);
+            initializedQuestionRef.current = {
+                index: gameData.currentQuestionIndex, startedAt: gameData.startedAt,
+            };
         }
-    }, [gameData?.status, gameData?.currentQuestionIndex, gameData?.startedAt, computedTimeRemaining, gameData?.quiz?.questions]);
+        if (gameData.myAnswer) {
+            setSelectedAnswer(gameData.myAnswer.answerId);
+            setHasAnswered(true);
+            if (gameData.myAnswer.isCorrect !== null && gameData.myAnswer.pointsEarned !== null) {
+                setAnswerResult(gameData.myAnswer.isCorrect, gameData.myAnswer.pointsEarned);
+            }
+            setSubmissionError(null);
+        }
+    }, [gameData, computedTimeRemaining, setHasAnswered, setAnswerResult]);
 
     // Tick every second to update the countdown display
     useEffect(() => {
@@ -233,7 +268,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         if (gameData && playerId) {
             const me = gameData.players.find(p => p.id === playerId);
             if (me) {
-                setMyScore(me.score);
+                setMyScore((previous) => Math.max(previous, me.score));
                 const sortedPlayers = [...gameData.players].sort((a, b) => b.score - a.score);
                 const rank = sortedPlayers.findIndex(p => p.id === playerId) + 1;
                 setMyRank(rank);
@@ -242,33 +277,53 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     }, [gameData, playerId]);
 
     const fetchGame = async () => {
+        if (pollControllerRef.current) return;
+        const controller = new AbortController();
+        pollControllerRef.current = controller;
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const sentAt = Date.now();
         try {
-            const res = await fetch(`/api/games/${pin}`);
+            const currentPlayerId = useGameStore.getState().playerId;
+            const query = currentPlayerId ? `?playerId=${encodeURIComponent(currentPlayerId)}` : "";
+            const res = await fetch(`/api/games/${pin}${query}`, { cache: "no-store", signal: controller.signal });
             const data = await res.json();
-
-            if (data.success) {
-                setGameData(data.data);
-            } else {
-                toast.error("ไม่พบเกมนี้");
-                router.push("/join");
+            if (pollControllerRef.current !== controller) return;
+            if (!res.ok || !data.success) {
+                if (res.status === 404) {
+                    toast.error("ไม่พบเกมนี้");
+                    router.push("/join");
+                    return;
+                }
+                throw new Error(data.error || "โหลดสถานะเกมไม่สำเร็จ");
             }
+            const snapshot = data.data as GameData;
+            serverOffsetRef.current = estimateServerOffset(snapshot.serverNow, sentAt, Date.now());
+            latestGameRef.current = snapshot;
+            setGameData(snapshot);
+            toast.dismiss(`connection-${pin}`);
         } catch {
-            // Silent fail for polling
+            if (pollControllerRef.current === controller) {
+                toast.error("เชื่อมต่อเกมไม่สำเร็จ กำลังลองใหม่ คำถามอาจยังไม่อัปเดต", {
+                    id: `connection-${pin}`, duration: Infinity,
+                    action: { label: "เชื่อมต่อใหม่", onClick: () => { void fetchGame(); } },
+                });
+            }
         } finally {
-            setIsLoading(false);
+            clearTimeout(timeout);
+            if (pollControllerRef.current === controller) {
+                pollControllerRef.current = null;
+                setIsLoading(false);
+            }
         }
     };
 
     const handleJoin = async () => {
-        if (!nickname.trim()) {
-            toast.error("กรุณากรอกชื่อเล่น");
+        const result = joinGameSchema.safeParse({ pin, nickname });
+        if (!result.success) {
+            toast.error(result.error.issues[0].message);
             return;
         }
-
-        if (nickname.length > 20) {
-            toast.error("ชื่อเล่นต้องไม่เกิน 20 ตัวอักษร");
-            return;
-        }
+        const playerName = result.data.nickname;
 
         setIsJoining(true);
 
@@ -276,16 +331,16 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             const res = await fetch(`/api/games/${pin}/join`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ nickname }),
+                body: JSON.stringify({ nickname: playerName }),
             });
 
             const data = await res.json();
 
             if (data.success) {
-                setPlayer(data.data.id, nickname);
+                setPlayer(data.data.id, playerName);
                 // Emit socket event to notify host
-                socketJoinGame(pin, data.data.id, nickname);
-                toast.success(`ยินดีต้อนรับ ${nickname}!`);
+                socketJoinGame(pin, data.data.id, playerName);
+                toast.success(`ยินดีต้อนรับ ${playerName}!`);
                 await fetchGame();
             } else {
                 toast.error(data.error || "เข้าร่วมเกมไม่สำเร็จ");
@@ -298,16 +353,24 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     };
 
     const handleSelectAnswer = async (answerId: string) => {
-        if (hasAnswered || !playerId || !gameData) return;
-
+        if (submittingRef.current || !playerId || !gameData || gameData.status !== "QUESTION") return;
+        if (hasAnswered && !submissionError) return;
+        const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
+        if (!currentQuestion) return;
+        const isCurrentQuestion = () => isSameGameQuestion(latestGameRef.current, gameData);
+        submittingRef.current = true;
+        setIsSubmitting(true);
+        setSubmissionError(null);
         setSelectedAnswer(answerId);
         setHasAnswered(true);
-
-        const responseTime = Date.now() - answerStartTime;
-        const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
+        const responseTime = Math.max(0, Date.now() + serverOffsetRef.current - new Date(gameData.startedAt || Date.now()).getTime());
+        const controller = new AbortController();
+        submissionControllerRef.current = controller;
+        const timeout = setTimeout(() => controller.abort(), 10000);
 
         try {
             const res = await fetch(`/api/games/${pin}/answer`, {
+                signal: controller.signal,
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -320,16 +383,29 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
 
             const data = await res.json();
 
-            if (data.success) {
-                // Emit socket event to notify host
+            if (!res.ok || !data.success) throw new Error(data.error || "ส่งคำตอบไม่สำเร็จ");
+            setMyScore((previous) => Math.max(previous, data.data.score));
+            if (isCurrentQuestion()) {
                 socketSubmitAnswer(pin, playerId);
+                setSelectedAnswer(data.data.selectedAnswerId);
                 setAnswerResult(data.data.isCorrect, data.data.pointsEarned);
-                if (data.data.isCorrect) {
-                    setMyScore((prev) => prev + data.data.pointsEarned);
-                }
+                setSubmissionError(null);
             }
-        } catch {
-            toast.error("ส่งคำตอบไม่สำเร็จ");
+        } catch (error) {
+            if (isCurrentQuestion()) {
+                const message = error instanceof Error && error.name !== "AbortError"
+                    ? error.message : "ยังยืนยันการบันทึกไม่ได้ ตรวจสอบการเชื่อมต่อแล้วลองส่งคำตอบเดิมอีกครั้ง";
+                setSubmissionError(message);
+                toast.error(message);
+            }
+        } finally {
+            clearTimeout(timeout);
+            if (submissionControllerRef.current === controller) {
+                submissionControllerRef.current = null;
+                submittingRef.current = false;
+                setIsSubmitting(false);
+                void fetchGame();
+            }
         }
     };
 
@@ -346,7 +422,15 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     }
 
     if (!gameData) {
-        return null;
+        return (
+            <div className="grid min-h-dvh place-items-center px-4">
+                <div className="kq-card max-w-md space-y-4 p-6 text-center">
+                    <h1 className="kq-title">กำลังเชื่อมต่อเกม</h1>
+                    <p className="text-sm text-muted-foreground">ยังโหลดข้อมูลเกมไม่ได้ ระบบจะลองใหม่อัตโนมัติ กรุณาตรวจสอบอินเทอร์เน็ต</p>
+                    <button type="button" onClick={() => { void fetchGame(); }} className="kq-btn kq-btn-yellow">ลองเชื่อมต่อใหม่</button>
+                </div>
+            </div>
+        );
     }
 
     // Not joined yet - show nickname input
@@ -410,21 +494,25 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
                             </p>
 
                             <label htmlFor="nickname" className="kq-label mt-6">
-                                ชื่อเล่น
+                                ชื่อผู้เล่น
                             </label>
                             <input
                                 id="nickname"
                                 type="text"
-                                placeholder="ใส่ชื่อเล่นของคุณ"
+                                placeholder="ชื่อ–นามสกุล / แผนก / เลขประจำตัว"
+                                aria-describedby="nickname-help nickname-count"
                                 value={nickname}
                                 onChange={(e) => setNickname(e.target.value)}
                                 className="kq-input h-14 text-center text-lg"
-                                maxLength={20}
+                                maxLength={MAX_PLAYER_NAME_LENGTH}
                                 disabled={isJoining}
                                 onKeyDown={(e) => e.key === "Enter" && handleJoin()}
                             />
-                            <p className="mt-1 text-right text-xs font-bold text-muted-foreground">
-                                {nickname.length}/20
+                            <p id="nickname-count" className="mt-1 text-right text-xs font-bold text-muted-foreground">
+                                {nickname.length}/{MAX_PLAYER_NAME_LENGTH}
+                            </p>
+                            <p id="nickname-help" className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                ใส่ชื่อ–นามสกุล แผนก หรือเลขประจำตัวได้ ข้อมูลนี้จะแสดงในห้องเกมและรายงาน
                             </p>
 
                             <button
@@ -532,7 +620,19 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
                             </div>
 
                             {lastAnswerCorrect === null ? (
-                                <h2 className="kq-title mt-5">รอผลลัพธ์...</h2>
+                                <>
+                                    <h2 className="kq-title mt-5">{submissionError ? "ยังยืนยันคำตอบไม่ได้" : gameData.myAnswer ? "บันทึกคำตอบแล้ว รอเฉลย" : isSubmitting ? "กำลังบันทึกคำตอบ..." : "กำลังตรวจสอบคำตอบ..."}</h2>
+                                    {submissionError && (
+                                        <div className="mt-3 space-y-3" role="alert">
+                                            <p className="text-sm text-destructive">{submissionError}</p>
+                                            {selectedAnswer && (
+                                                <button type="button" disabled={isSubmitting} onClick={() => { void handleSelectAnswer(selectedAnswer); }} className="kq-btn kq-btn-yellow">
+                                                    ส่งคำตอบเดิมอีกครั้ง
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </>
                             ) : lastAnswerCorrect ? (
                                 <>
                                     <h2 className="kq-title mt-5 text-success">ถูกต้อง!</h2>
@@ -607,7 +707,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
                                 key={answer.id}
                                 type="button"
                                 onClick={() => handleSelectAnswer(answer.id)}
-                                disabled={hasAnswered || timeRemaining === 0}
+                                disabled={hasAnswered || isSubmitting || timeRemaining === 0}
                                 className={`kq-answer ${getColorClass(answer.color)} ${
                                     timeRemaining === 0 ? "kq-answer-dim" : ""
                                 }`}

@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useSocket } from "@/hooks/use-socket";
 import { Progress } from "@/components/ui/progress";
 import { ArcadeSprite } from "@/components/arcade-sprite";
+import { AnimatedScore } from "@/components/animated-score";
 import {
     ArrowLeft,
     Users,
@@ -28,6 +29,7 @@ import {
 import { toast } from "sonner";
 
 import { audioSynth } from "@/utils/audio-synth";
+import { countQuestionAnswers } from "@/lib/answer-counts";
 
 
 // Utility for coloring
@@ -64,6 +66,7 @@ interface Question {
     timeLimit: number;
     points: number;
     answers: Answer[];
+    playerAnswers?: { playerId: string; answerId: string | null }[];
 }
 
 interface Quiz {
@@ -307,15 +310,15 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
         let autoTimer: NodeJS.Timeout;
 
         if (gameData.status === "SHOWING_ANSWER") {
-            // Wait 3 seconds then go to Leaderboard
+            // Leave enough time to read the per-answer response counts.
             autoTimer = setTimeout(() => {
                 handleShowLeaderboard();
-            }, 3000);
+            }, 6000);
         } else if (gameData.status === "LEADERBOARD") {
-            // Wait 3 seconds then go to Next Question
+            // Allow the staggered reveal and score animation to finish before moving on.
             autoTimer = setTimeout(() => {
                 handleNextQuestion();
-            }, 3000);
+            }, 5000);
         }
 
         return () => {
@@ -372,8 +375,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                 if (data.data.status === "QUESTION") {
                     const currentQ = data.data.quiz.questions[data.data.currentQuestionIndex];
                     if (currentQ?.playerAnswers) {
-                        // Only count answers from players currently in THIS session
-                        // (playerAnswers includes answers from ALL past sessions using this question)
+                        // Restrict the tally to players currently in this room.
                         const currentPlayerIds = new Set(data.data.players.map((p: Player) => p.id));
                         const sessionAnswers = currentQ.playerAnswers.filter(
                             (pa: { playerId: string }) => currentPlayerIds.has(pa.playerId)
@@ -508,6 +510,10 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
     if (!gameData) return null;
 
     const currentQuestion = gameData.quiz.questions[gameData.currentQuestionIndex];
+    const answerSummary = countQuestionAnswers(
+        currentQuestion?.answers.map((answer) => answer.id) ?? [],
+        currentQuestion?.playerAnswers ?? []
+    );
     const answerLetters = ["A", "B", "C", "D"];
     const answerGlyphs = ["▲", "◆", "●", "■"];
 
@@ -930,17 +936,32 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                             {currentQuestion.answers.map((answer, idx) => (
                                 <div
                                     key={answer.id}
-                                    className={`kq-answer pointer-events-none cursor-default ${getColorClass(
+                                    className={`kq-answer kq-answer-result pointer-events-none cursor-default ${getColorClass(
                                         answer.color
-                                    )} ${
-                                        answer.isCorrect ? "kq-answer-correct" : "kq-answer-dim"
-                                    }`}
+                                    )} ${answer.isCorrect ? "kq-answer-correct" : ""}`}
+                                    style={{ animationDelay: `${idx * 90}ms` }}
                                 >
                                     <span className="kq-answer-shape kq-pixel text-[10px]">
                                         {answerLetters[idx]}
                                     </span>
-                                    <span className="flex-1 text-[clamp(1.1rem,2.1vw,2rem)] font-bold leading-snug break-words">
+                                    <span className="min-w-0 flex-1 text-[clamp(1.1rem,2.1vw,2rem)] font-bold leading-snug break-words">
                                         {answer.answerText}
+                                    </span>
+                                    <span
+                                        aria-label={`มีผู้เลือกคำตอบนี้ ${answerSummary.counts[answer.id]} คน`}
+                                        className="kq-answer-count grid min-w-14 flex-none place-items-center border-[3px] border-[#211543] bg-[#fff9e7] px-3 py-2 text-2xl font-extrabold tabular-nums text-[#211543] shadow-hard-sm sm:text-4xl"
+                                        style={{ animationDelay: `${200 + idx * 90}ms` }}
+                                    >
+                                        {answerSummary.counts[answer.id]}
+                                    </span>
+                                    <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-2 bg-black/15">
+                                        <span
+                                            className="kq-answer-result-bar block h-full bg-[#fff9e7]/80"
+                                            style={{
+                                                width: `${gameData.players.length ? answerSummary.counts[answer.id] / gameData.players.length * 100 : 0}%`,
+                                                animationDelay: `${200 + idx * 90}ms`,
+                                            }}
+                                        />
                                     </span>
                                     {answer.isCorrect ? (
                                         <span
@@ -969,7 +990,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                             </span>
                             <span>
                                 <span className="kq-stat-value block text-2xl">
-                                    {answeredCount} / {gameData.players.length}
+                                    {answerSummary.answered} / {gameData.players.length}
                                 </span>
                                 <span className="kq-stat-label block">ตอบในข้อนี้</span>
                             </span>
@@ -990,10 +1011,12 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
             {/* ════════════════════ LEADERBOARD ════════════════════ */}
             {gameData.status === "LEADERBOARD" && (
-                <div className="relative z-10 flex min-h-dvh flex-col">
+                <div key={`leaderboard-${gameData.currentQuestionIndex}`} className="relative z-10 flex min-h-dvh flex-col">
                     <header className="kq-shell-wide flex flex-col items-center gap-3 pt-8 text-center">
-                        <ArcadeSprite kind="trophy" className="size-20 animate-float" />
-                        <div>
+                        <div className="animate-bounce-in">
+                            <ArcadeSprite kind="trophy" className="size-20 animate-float" />
+                        </div>
+                        <div className="animate-slide-up" style={{ animationDelay: "100ms" }}>
                             <p className="kq-overline text-[var(--sunny)]">LEADERBOARD</p>
                             <h1 className="kq-title-xl">TOP 5</h1>
                         </div>
@@ -1010,11 +1033,12 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                             .map((player, index) => (
                                 <div
                                     key={player.id}
-                                    className="kq-leader-row animate-slide-up text-lg lg:text-2xl"
-                                    style={{ animationDelay: `${index * 90}ms` }}
+                                    className={`kq-leader-row kq-leader-entry text-lg lg:text-2xl ${index === 0 ? "kq-leader-champion" : ""}`}
+                                    style={{ animationDelay: `${250 + index * 150}ms` }}
                                 >
                                     <span
-                                        className={`kq-rank ${
+                                        style={{ animationDelay: `${450 + index * 150}ms` }}
+                                        className={`kq-rank motion-safe:animate-bounce-in ${
                                             index === 0
                                                 ? "kq-rank-1"
                                                 : index === 1
@@ -1027,21 +1051,21 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                                         {index + 1}
                                     </span>
 
-                                    <span className="min-w-0 flex-1 truncate font-extrabold text-ink">
+                                    <span title={player.nickname} className="min-w-0 flex-1 truncate font-extrabold text-ink">
                                         {player.nickname}
                                     </span>
 
                                     {index === 0 ? (
                                         <ArcadeSprite
                                             kind="trophy"
-                                            className="size-8 flex-none"
+                                            className="kq-leader-trophy size-8 flex-none"
                                             title="ผู้ชนะอันดับ 1"
                                         />
                                     ) : null}
 
                                     <span className="flex-none border-[3px] border-line bg-[var(--arcade-deep)] px-3 py-1">
                                         <span className="kq-stat-value text-base lg:text-xl">
-                                            {player.score.toLocaleString()}
+                                            <AnimatedScore value={player.score} delay={450 + index * 150} />
                                         </span>
                                     </span>
                                 </div>
@@ -1076,7 +1100,7 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                         {[...Array(30)].map((_, i) => (
                             <div
                                 key={i}
-                                className="absolute size-3 animate-float lg:size-5"
+                                className="kq-finish-confetti absolute size-3 lg:size-5"
                                 style={{
                                     backgroundColor: [
                                         "var(--sunny)",
@@ -1085,19 +1109,20 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                                         "var(--mint)",
                                         "var(--peach)",
                                         "var(--grape)",
-                                    ][Math.floor(Math.random() * 6)],
-                                    top: `${Math.random() * 100}%`,
-                                    left: `${Math.random() * 100}%`,
-                                    animationDuration: `${3 + Math.random() * 4}s`,
-                                    animationDelay: `-${Math.random() * 5}s`,
-                                    opacity: 0.7,
+                                    ][i % 6],
+                                    top: "-24px",
+                                    left: `${(i * 37 + 11) % 100}%`,
+                                    animationDuration: `${4 + (i % 5) * 0.35}s`,
+                                    animationDelay: `${0.3 + i * 0.085}s`,
                                 }}
                             />
                         ))}
                     </div>
 
                     <header className="relative z-10 flex flex-col items-center gap-2 px-4 pt-8 text-center">
-                        <ArcadeSprite kind="trophy" className="size-24 animate-float" />
+                        <div className="motion-safe:animate-bounce-in">
+                            <ArcadeSprite kind="trophy" className="size-24 motion-safe:animate-float" />
+                        </div>
                         <p className="kq-overline text-[var(--sunny)]">GAME OVER</p>
                         <h1 className="kq-title-xl animate-bounce-in text-[clamp(2.4rem,6vw,4.5rem)]">
                             จบเกม
@@ -1115,20 +1140,21 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
                                     (a, b) => b.score - a.score
                                 );
                                 const topThree = sorted.slice(0, 3);
+                                const revealDelay = (rank: number) => 250 + (topThree.length - rank) * 450;
                                 return (
                                     <>
                                         {/* 2nd Place */}
                                         {topThree[1] && (
-                                            <div className="flex h-[68%] min-w-0 flex-1 flex-col items-center">
-                                                <div className="mb-2 grid size-12 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--electric)] text-[#211543] shadow-hard-sm lg:size-16">
+                                            <div className="kq-podium-enter flex h-[68%] min-w-0 flex-1 flex-col items-center" style={{ animationDelay: `${revealDelay(2)}ms` }}>
+                                                <div className="mb-2 grid size-12 flex-none motion-safe:animate-bounce-in place-items-center border-[3px] border-line bg-[var(--electric)] text-[#211543] shadow-hard-sm lg:size-16" style={{ animationDelay: `${revealDelay(2) + 350}ms` }}>
                                                     <span className="kq-pixel text-sm">2</span>
                                                 </div>
                                                 <div className="flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--arcade)] px-2 pt-3 text-center">
-                                                    <p className="w-full truncate text-base font-extrabold text-[var(--on-arcade)] lg:text-2xl">
+                                                    <p title={topThree[1].nickname} className="w-full truncate text-base font-extrabold text-[var(--on-arcade)] lg:text-2xl">
                                                         {topThree[1].nickname}
                                                     </p>
                                                     <span className="kq-stat-value text-sm lg:text-lg">
-                                                        {topThree[1].score.toLocaleString()}
+                                                        <AnimatedScore value={topThree[1].score} delay={revealDelay(2) + 500} duration={1100} />
                                                     </span>
                                                 </div>
                                             </div>
@@ -1136,21 +1162,23 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
                                         {/* 1st Place */}
                                         {topThree[0] && (
-                                            <div className="z-20 flex h-[90%] min-w-0 flex-1 flex-col items-center">
-                                                <ArcadeSprite
-                                                    kind="trophy"
-                                                    className="mb-1 size-12 flex-none animate-float lg:size-16"
-                                                    title="ถ้วยรางวัลผู้ชนะ"
-                                                />
-                                                <div className="mb-2 grid size-14 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--sunny)] text-[#211543] shadow-hard-sm lg:size-20">
+                                            <div className="kq-podium-enter z-20 flex h-[90%] min-w-0 flex-1 flex-col items-center" style={{ animationDelay: `${revealDelay(1)}ms` }}>
+                                                <div className="kq-podium-crown mb-1 flex-none" style={{ animationDelay: `${revealDelay(1) + 400}ms` }}>
+                                                    <ArcadeSprite
+                                                        kind="trophy"
+                                                        className="size-12 motion-safe:animate-float lg:size-16"
+                                                        title="ถ้วยรางวัลผู้ชนะ"
+                                                    />
+                                                </div>
+                                                <div className="mb-2 grid size-14 flex-none motion-safe:animate-bounce-in place-items-center border-[3px] border-line bg-[var(--sunny)] text-[#211543] shadow-hard-sm lg:size-20" style={{ animationDelay: `${revealDelay(1) + 350}ms` }}>
                                                     <span className="kq-pixel text-base">1</span>
                                                 </div>
-                                                <div className="flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--grape)] px-2 pt-4 text-center shadow-hard-lg">
-                                                    <p className="w-full truncate text-lg font-extrabold text-[var(--on-arcade)] lg:text-3xl">
+                                                <div className="kq-podium-winner flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--grape)] px-2 pt-4 text-center shadow-hard-lg">
+                                                    <p title={topThree[0].nickname} className="w-full truncate text-lg font-extrabold text-[var(--on-arcade)] lg:text-3xl">
                                                         {topThree[0].nickname}
                                                     </p>
                                                     <span className="kq-stat-value text-lg lg:text-2xl">
-                                                        {topThree[0].score.toLocaleString()}
+                                                        <AnimatedScore value={topThree[0].score} delay={revealDelay(1) + 500} duration={1100} />
                                                     </span>
                                                 </div>
                                             </div>
@@ -1158,16 +1186,16 @@ export default function HostGamePage({ params }: { params: Promise<{ pin: string
 
                                         {/* 3rd Place */}
                                         {topThree[2] && (
-                                            <div className="flex h-[52%] min-w-0 flex-1 flex-col items-center">
-                                                <div className="mb-2 grid size-12 flex-none animate-bounce-in place-items-center border-[3px] border-line bg-[var(--peach)] text-[#211543] shadow-hard-sm lg:size-16">
+                                            <div className="kq-podium-enter flex h-[52%] min-w-0 flex-1 flex-col items-center" style={{ animationDelay: `${revealDelay(3)}ms` }}>
+                                                <div className="mb-2 grid size-12 flex-none motion-safe:animate-bounce-in place-items-center border-[3px] border-line bg-[var(--peach)] text-[#211543] shadow-hard-sm lg:size-16" style={{ animationDelay: `${revealDelay(3) + 350}ms` }}>
                                                     <span className="kq-pixel text-sm">3</span>
                                                 </div>
                                                 <div className="flex w-full flex-1 flex-col items-center gap-2 border-[3px] border-line bg-[var(--arcade)] px-2 pt-3 text-center">
-                                                    <p className="w-full truncate text-base font-extrabold text-[var(--on-arcade)] lg:text-2xl">
+                                                    <p title={topThree[2].nickname} className="w-full truncate text-base font-extrabold text-[var(--on-arcade)] lg:text-2xl">
                                                         {topThree[2].nickname}
                                                     </p>
                                                     <span className="kq-stat-value text-sm lg:text-lg">
-                                                        {topThree[2].score.toLocaleString()}
+                                                        <AnimatedScore value={topThree[2].score} delay={revealDelay(3) + 500} duration={1100} />
                                                     </span>
                                                 </div>
                                             </div>

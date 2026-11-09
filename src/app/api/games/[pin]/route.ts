@@ -83,10 +83,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             );
         }
 
+        const playerId = request.nextUrl.searchParams.get("playerId");
+        const currentQuestion = gameSession.quiz.questions[gameSession.currentQuestionIndex];
+        const myAnswer = playerId && currentQuestion && gameSession.players.some((player) => player.id === playerId)
+            ? await prisma.playerAnswer.findFirst({
+                where: { playerId, questionId: currentQuestion.id },
+                select: { questionId: true, answerId: true, isCorrect: true, pointsEarned: true },
+            })
+            : null;
+
         return NextResponse.json<ApiResponse>({
             success: true,
-            data: gameSession,
-        });
+            data: {
+                ...gameSession,
+                myAnswer: myAnswer && gameSession.status === "QUESTION"
+                    ? { ...myAnswer, isCorrect: null, pointsEarned: null }
+                    : myAnswer,
+                serverNow: new Date().toISOString(),
+            },
+        }, { headers: { "Cache-Control": "private, no-store" } });
     } catch (error) {
         console.error("Get game error:", error);
         return NextResponse.json<ApiResponse>(
@@ -155,7 +170,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
                 quiz: {
                     include: {
                         questions: {
-                            include: { answers: { orderBy: { order: "asc" } } },
+                            include: {
+                                answers: { orderBy: { order: "asc" } },
+                                playerAnswers: {
+                                    where: { player: { session: { pin } } },
+                                    select: { playerId: true, answerId: true },
+                                },
+                            },
                             orderBy: { order: "asc" },
                         },
                     },

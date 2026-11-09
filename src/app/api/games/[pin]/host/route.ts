@@ -102,7 +102,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                                     orderBy: { order: "asc" },
                                 },
                                 playerAnswers: {
-                                    select: { playerId: true }
+                                    where: { player: { session: { pin } } },
+                                    select: { playerId: true, answerId: true },
                                 },
                             },
                             orderBy: { order: "asc" },

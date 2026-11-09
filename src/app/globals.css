@@ -859,6 +859,21 @@
     animation: var(--animate-shake);
   }
 
+  .kq-answer-result {
+    position: relative;
+    padding-bottom: 1.5rem;
+    animation: var(--animate-slide-up);
+  }
+
+  .kq-answer-count {
+    animation: var(--animate-bounce-in);
+  }
+
+  .kq-answer-result-bar {
+    transform-origin: left;
+    animation: kq-answer-bar-in 0.65s ease-out both;
+  }
+
   .kq-answer-shape {
     display: grid;
     place-items: center;
@@ -909,6 +924,32 @@
     box-shadow: var(--sh-sm);
   }
 
+  .kq-leader-entry {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    animation: kq-leader-enter 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .kq-leader-champion {
+    border-color: var(--sunny);
+    box-shadow: 4px 4px 0 #211543, 0 0 22px rgb(255 225 74 / 20%);
+  }
+
+  .kq-leader-champion::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(110deg, transparent 20%, rgb(255 225 74 / 45%) 50%, transparent 80%);
+    animation: kq-leader-shine 1.1s ease-out 0.8s both;
+  }
+
+  .kq-leader-trophy {
+    animation: kq-leader-trophy 0.8s ease-in-out 0.6s both;
+  }
+
   .kq-rank {
     display: grid;
     place-items: center;
@@ -930,6 +971,37 @@
   }
   .kq-rank-3 {
     background: var(--peach);
+  }
+
+  .kq-podium-enter {
+    transform-origin: bottom center;
+    animation: kq-podium-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .kq-podium-crown {
+    animation: kq-crown-reveal 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  }
+
+  .kq-podium-winner {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-color: var(--sunny);
+    box-shadow: var(--sh-lg), 0 0 32px rgb(255 225 74 / 25%);
+  }
+
+  .kq-podium-winner::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(110deg, transparent 20%, rgb(255 225 74 / 30%) 50%, transparent 80%);
+    animation: kq-leader-shine 1.2s ease-out 1.7s both;
+  }
+
+  .kq-finish-confetti {
+    animation: kq-confetti-fall 5s linear both;
   }
 
   /* ---------- Overlay backdrop for game screens ---------- */
@@ -1054,6 +1126,83 @@
   }
 }
 
+@keyframes kq-podium-rise {
+  from {
+    opacity: 0;
+    transform: translateY(70px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes kq-crown-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-28px) rotate(-18deg) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0) scale(1);
+  }
+}
+
+@keyframes kq-confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0) rotate(0);
+  }
+  8%, 85% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(28px, 110dvh, 0) rotate(540deg);
+  }
+}
+
+@keyframes kq-leader-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-36px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes kq-leader-shine {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes kq-leader-trophy {
+  0%, 100% {
+    transform: rotate(0) scale(1);
+  }
+  30% {
+    transform: rotate(-14deg) scale(1.15);
+  }
+  65% {
+    transform: rotate(12deg) scale(1.15);
+  }
+}
+
+@keyframes kq-answer-bar-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @keyframes kq-indeterminate-progress {
   from {
     transform: translateX(-100%);
@@ -1096,6 +1245,19 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .kq-leader-entry,
+  .kq-leader-trophy,
+  .kq-podium-enter,
+  .kq-podium-crown {
+    animation: none !important;
+  }
+
+  .kq-leader-champion::after,
+  .kq-podium-winner::after,
+  .kq-finish-confetti {
+    display: none;
   }
 
   .kq-marquee-track {
